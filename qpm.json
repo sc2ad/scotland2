@@ -1,0 +1,15 @@
+{
+  "sharedDir": "shared",
+  "dependenciesDir": "extern",
+  "info": {
+    "name": "scotland2",
+    "id": "scotland2",
+    "version": "0.1.0",
+    "url": "https://github.com/sc2ad/scotland2",
+    "additionalData": {
+      "overrideSoName": "libsl2.so"
+    }
+  },
+  "dependencies": [],
+  "additionalData": {}
+}

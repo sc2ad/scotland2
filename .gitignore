@@ -30,3 +30,31 @@
 *.exe
 *.out
 *.app
+
+# VSCode config stuff
+!.vscode/c_cpp_properties.json
+!.vscode/tasks.json
+.vscode/settings.json
+
+# NDK stuff
+out/
+[Ll]ib/
+[Ll]ibs/
+[Oo]bj/
+[Oo]bjs/
+ndkpath.txt
+*.zip
+
+# Log files/backups
+*.log
+*.backup
+
+
+libs/
+obj/
+extern/
+qpm.shared.json
+*.backup
+extern.cmake
+qpm_defines.cmake
+build/
