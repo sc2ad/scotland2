@@ -14,6 +14,7 @@ struct Modloader {
 
     static std::string const& get_modloader_path();
     static void construct_mods();
+    static void load_mods();
     static inline void set_modloader_path(std::filesystem::path const& p) {
         modloader_path = p;
     }
