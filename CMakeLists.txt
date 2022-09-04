@@ -1,5 +1,20 @@
+if (NOT DEFINED BUILD_FOR)
+    set(BUILD_FOR QUEST)
+endif()
+
+if (${BUILD_FOR} STREQUAL LINUX)
+    set(CMAKE_ANDROID_NDK "h/")
+endif()
+
 # include some defines automatically made by qpm
 include(qpm_defines.cmake)
+
+if (${BUILD_FOR} STREQUAL LINUX)
+    set(CMAKE_TOOLCHAIN_FILE "")
+    set(CMAKE_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_NAME})
+
+    add_compile_definitions(LINUX_TEST)
+endif()
 
 cmake_minimum_required(VERSION 3.22)
 project(${COMPILE_ID})
@@ -7,8 +22,10 @@ project(${COMPILE_ID})
 # c++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED 20)
-# LTO
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+if (${CMAKE_BUILD_TYPE} STREQUAL "RELEASE" OR ${CMAKE_BUILD_TYPE} STREQUAL "RelWithDebInfo")
+    # LTO
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+endif()
 
 # define that stores the actual source directory
 set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -42,22 +59,42 @@ target_include_directories(${COMPILE_ID} PRIVATE ${INCLUDE_DIR})
 # add shared dir as include dir
 target_include_directories(${COMPILE_ID} PUBLIC ${SHARED_DIR})
 
-target_link_libraries(${COMPILE_ID} PRIVATE -llog)
+
 
 include(extern.cmake)
 MESSAGE(STATUS "extern added!")
 
-add_custom_command(TARGET ${COMPILE_ID} POST_BUILD
-            COMMAND ${CMAKE_STRIP} -g -S -d --strip-all
-            "lib${COMPILE_ID}.so" -o "stripped_lib${COMPILE_ID}.so"
-            COMMENT "Strip debug symbols done on final binary.")
+
+if (${BUILD_FOR} STREQUAL LINUX)
+    RECURSE_FILES(cpp_test_file_list ./test/*.cpp)
+
+    set(testname BootstrapTest)
+
+    add_executable(${testname} ${cpp_test_file_list})
+
+    # add include dir as include dir
+    target_include_directories(${testname} PRIVATE ${INCLUDE_DIR})
+    # add shared dir as include dir
+    target_include_directories(${testname} PUBLIC ${SHARED_DIR})
+
+    target_link_libraries(${testname} PRIVATE ${COMPILE_ID})
+
+else()
+    target_link_libraries(${COMPILE_ID} PRIVATE -llog)
 
 add_custom_command(TARGET ${COMPILE_ID} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E rename lib${COMPILE_ID}.so debug_lib${COMPILE_ID}.so
-            COMMENT "Rename the lib to debug_ since it has debug symbols"
-            )
+        COMMAND ${CMAKE_STRIP} -g -S -d --strip-all
+        "lib${COMPILE_ID}.so" -o "stripped_lib${COMPILE_ID}.so"
+        COMMENT "Strip debug symbols done on final binary.")
 
 add_custom_command(TARGET ${COMPILE_ID} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E rename stripped_lib${COMPILE_ID}.so lib${COMPILE_ID}.so
-            COMMENT "Rename the stripped lib to regular"
-            )
+        COMMAND ${CMAKE_COMMAND} -E rename lib${COMPILE_ID}.so debug_lib${COMPILE_ID}.so
+        COMMENT "Rename the lib to debug_ since it has debug symbols"
+        )
+
+add_custom_command(TARGET ${COMPILE_ID} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E rename stripped_lib${COMPILE_ID}.so lib${COMPILE_ID}.so
+        COMMENT "Rename the stripped lib to regular"
+        )
+
+endif()
