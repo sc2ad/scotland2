@@ -56,8 +56,8 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
     // mods last
     // early mods before
     // libs first
-    for (LoadPhase i = phase; i <= phase; i = (static_cast<LoadPhase>(static_cast<int>(i) + 1))) {
-        paths.emplace(pathsMap[i]);
+    for (int i = static_cast<int>(phase); i <= static_cast<int>(LoadPhase::Libs); i++) {
+        paths.emplace(pathsMap[static_cast<LoadPhase>(i)]);
     }
 
     auto dir = paths.top();
@@ -65,17 +65,20 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
 
     auto openedPhase = static_cast<LoadPhase>(phase);
 
-    while (!std::filesystem::exists(dir / name)) {
+    //TODO: Fix
+    auto check = std::filesystem::current_path() / "test" / dir / name;
+
+    while (!std::filesystem::exists(check)) {
         if (paths.empty()) {
             return std::nullopt;
         }
 
         dir = paths.top();
         paths.pop();
-        openedPhase = static_cast<LoadPhase>(static_cast<int>(openedPhase) + 1);
+        openedPhase = static_cast<LoadPhase>(static_cast<int>(openedPhase) - 1);
     }
 
-    return {{SharedObject(dir / name), openedPhase}};
+    return {{SharedObject(check), openedPhase}};
 }
 
 //TODO: Use a map?
