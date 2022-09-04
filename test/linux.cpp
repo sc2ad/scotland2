@@ -29,7 +29,7 @@ int main() {
 
     auto sorted = modloader::topologicalSort(dependencies);
     for (auto const& dep : dependencies) {
-        std::cout << "-" << dep.object.path.filename();
+        std::cout << "-" << dep.object.path.filename() << std::endl;
     }
 }
 

@@ -109,13 +109,10 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
         auto const& sectionHeader = *it;
         if (sectionHeader.sh_type != SHT_DYNAMIC) { continue; }
 
-        // We use a span here but the size is wrong
-        // I am FAR TOO LAZY TO MAKE THE SIZE CORRECT
+
         auto dynamics = readManyAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset, sectionHeader.sh_size / sectionHeader.sh_entsize, 1);
 
         for (auto const& dyn : dynamics) {
-//        for (size_t i = 0; i < sectionHeader.sh_size / sectionHeader.sh_entsize; i++) {
-//            auto const& dyn = dynamics[i];
             if (dyn.d_tag != DT_NEEDED) {
                 continue;
             }
