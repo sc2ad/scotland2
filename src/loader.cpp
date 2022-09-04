@@ -1,3 +1,5 @@
+#include "loader.hpp"
+
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,20 +20,11 @@
 // I wrote all of this while being tempted by Stack to use rust
 // temptation is very strong
 
+using namespace modloader;
+
 template <typename T>
 using StackDoubleFlow = std::stack<T>;
 
-struct SharedObject {
-    std::filesystem::path path;
-    explicit SharedObject(std::filesystem::path path) : path(std::move(path)) {}
-};
-
-struct Dependency {
-    SharedObject object;
-    std::vector<Dependency> dependencies;
-
-    Dependency(SharedObject object, std::vector<Dependency> dependencies) : object(std::move(object)), dependencies(std::move(dependencies)) {}
-};
 
 template<typename T>
 T& readAtOffset(std::span<uint8_t> f, size_t offset) {
@@ -47,11 +40,6 @@ std::span<T> readManyAtOffset(std::span<uint8_t> f, size_t offset, size_t amount
     return {reinterpret_cast<T*>(f[offset]), amount * size};
 }
 
-enum struct LoadPhase {
-    Mods = 0,
-    EarlyMods = 1,
-    Libs = 2,
-};
 
 std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phase, std::filesystem::path const& name) {
     std::unordered_map<LoadPhase, std::filesystem::path> pathsMap = {
@@ -89,8 +77,8 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
 }
 
 //TODO: Use a map?
-std::vector<Dependency> getToLoad(LoadPhase phase, SharedObject const& so) {
-    int fd = open(so.path.c_str(), O_RDONLY);
+std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase phase) const {
+    int fd = open(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
 //                                   strerror(errno));
@@ -126,7 +114,7 @@ std::vector<Dependency> getToLoad(LoadPhase phase, SharedObject const& so) {
 
                 if (optObj) {
                     auto [obj, openedPhase] = *optObj;
-                    dependencies.emplace_back(obj, getToLoad(openedPhase, so));
+                    dependencies.emplace_back(obj, obj.getToLoad(openedPhase));
                 }
             }
         }
@@ -171,7 +159,7 @@ void topologicalSortRecurse(Dependency& main, StackDoubleFlow<Dependency>& stack
     stack.emplace(main);
 }
 
-StackDoubleFlow<Dependency> topologicalSort(std::span<Dependency const> const list) {
+StackDoubleFlow<Dependency> modloader::topologicalSort(std::span<Dependency const> const list) {
     StackDoubleFlow<Dependency> dependencies;
     std::unordered_set<std::string_view> visited;
 
