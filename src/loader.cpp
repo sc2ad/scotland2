@@ -158,13 +158,15 @@ void sortDependencies(std::span<Dependency> deps) {
 // Use mutable ref to avoid making a new vector that is sorted
 // TODO: Should we even bother?
 void topologicalSortRecurse(Dependency& main, std::deque<Dependency>& stack, std::unordered_set<std::string_view>& visited) {
+    if (visited.contains(main.object.path.c_str())) {
+        return;
+    }
+
     visited.emplace(main.object.path.c_str());
     sortDependencies(main.dependencies);
 
     for (auto& dep : main.dependencies) {
-        if (!visited.contains(dep.object.path.c_str())) {
-            topologicalSortRecurse(dep, stack, visited);
-        }
+        topologicalSortRecurse(dep, stack, visited);
     }
 
     stack.emplace_back(main);
@@ -178,9 +180,7 @@ std::deque<Dependency> modloader::topologicalSort(std::span<Dependency const> co
     sortDependencies(deps);
 
     for (Dependency& dep : deps) {
-        if (!visited.contains(dep.object.path.c_str())) {
-            topologicalSortRecurse(dep, dependencies, visited);
-        }
+        topologicalSortRecurse(dep, dependencies, visited);
     }
 
     return dependencies;
