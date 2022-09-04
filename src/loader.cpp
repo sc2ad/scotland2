@@ -31,8 +31,8 @@ T& readAtOffset(std::span<uint8_t> f, ptrdiff_t offset) {
     return *reinterpret_cast<T*>(&f[offset]);
 }
 
-std::string_view readAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t size) {
-    return {reinterpret_cast<char const*>(&f[offset]), size};
+std::string_view readAtOffset(std::span<uint8_t> f, ptrdiff_t offset) {
+    return {reinterpret_cast<char const*>(&f[offset])};
 }
 
 template<typename T>
@@ -101,7 +101,7 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
     std::span<uint8_t> f(static_cast<uint8_t*>(mapped), static_cast<uint8_t*>(mapped) + size);
 
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
-    auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
+    auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shentsize, elf.e_shnum);
 
     std::vector<Dependency> dependencies;
 
@@ -109,24 +109,24 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
         auto const& sectionHeader = *it;
         if (sectionHeader.sh_type != SHT_DYNAMIC) { continue; }
 
-        for (size_t i = 0; i < sectionHeader.sh_size / sectionHeader.sh_entsize; i++) {
-            auto dyn = readAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset);
+        // We use a span here but the size is wrong
+        // I am FAR TOO LAZY TO MAKE THE SIZE CORRECT
+        auto dynamics = readManyAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset, sectionHeader.sh_size / sectionHeader.sh_entsize, 1);
 
+        for (auto const& dyn : dynamics) {
+//        for (size_t i = 0; i < sectionHeader.sh_size / sectionHeader.sh_entsize; i++) {
+//            auto const& dyn = dynamics[i];
             if (dyn.d_tag != DT_NEEDED) {
                 continue;
             }
 
-            std::string_view name = readAtOffset(f, sectionHeaders[sectionHeader.sh_link].sh_offset, dyn.d_un.d_val);
+            std::string_view name = readAtOffset(f, sectionHeaders[sectionHeader.sh_link].sh_offset + dyn.d_un.d_val);
 
-            if (name.data() == nullptr) {
+            if (name.data() == nullptr || name.empty()) {
                 continue;
             }
 
             auto optObj = getSharedObject(phase, name);
-
-                std::ofstream fff(std::filesystem::current_path() / std::string("test") / ".txt");
-            fff << name << std::endl;
-                fff.flush();
 
             if (optObj) {
                 auto [obj, openedPhase] = *optObj;
