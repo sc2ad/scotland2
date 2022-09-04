@@ -140,32 +140,45 @@ std::vector<Dependency> getToLoad(LoadPhase phase, SharedObject const& so) {
     return dependencies;
 }
 
+void sortDependencies(std::span<Dependency> deps) {
+    std::stable_sort(deps.begin(), deps.end(), [](Dependency const& a, Dependency const& b) {
+        return a.object.path > b.object.path;
+    });
+}
+
 // https://www.geeksforgeeks.org/cpp-program-for-topological-sorting/
-void topologicalSortRecurse(Dependency const& d, StackDoubleFlow<Dependency>& stack, std::unordered_set<std::string_view>& visited) {
-    if (visited.contains(d.object.path.c_str())) { return; }
+// Use mutable ref to avoid making a new vector that is sorted
+// TODO: Should we even bother?
+void topologicalSortRecurse(Dependency& main, StackDoubleFlow<Dependency>& stack, std::unordered_set<std::string_view>& visited) {
+    if (visited.contains(main.object.path.c_str())) { return; }
 
-    visited.emplace(d.object.path.c_str());
+    visited.emplace(main.object.path.c_str());
+    sortDependencies(main.dependencies);
 
-    for (auto const& dep : d.dependencies) {
+    for (auto& dep : main.dependencies) {
         if (visited.contains(dep.object.path.c_str())) { continue; }
 
         visited.emplace(dep.object.path.c_str());
 
-        for (auto const& innerDep : dep.dependencies) {
+        sortDependencies(dep.dependencies);
+        for (auto& innerDep : dep.dependencies) {
             if (!visited.contains(innerDep.object.path.c_str())) {
                 topologicalSortRecurse(innerDep, stack, visited);
             }
         }
     }
 
-    stack.emplace(d);
+    stack.emplace(main);
 }
 
 StackDoubleFlow<Dependency> topologicalSort(std::span<Dependency const> const list) {
     StackDoubleFlow<Dependency> dependencies;
     std::unordered_set<std::string_view> visited;
 
-    for (auto const& dep : list) {
+    std::vector<Dependency> deps(list.begin(), list.end());
+    sortDependencies(deps);
+
+    for (Dependency& dep : deps) {
         topologicalSortRecurse(dep, dependencies, visited);
     }
 
