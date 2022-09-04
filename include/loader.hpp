@@ -4,6 +4,7 @@
 #include <stack>
 #include <span>
 #include <filesystem>
+#include <deque>
 
 namespace modloader {
 
@@ -29,5 +30,5 @@ struct Dependency {
     Dependency(SharedObject object, std::vector<Dependency> dependencies) : object(std::move(object)), dependencies(std::move(dependencies)) {}
 };
 
-std::stack<Dependency> topologicalSort(std::span<Dependency const> list);
+std::deque<Dependency> topologicalSort(std::span<Dependency const> const list);
 }  // namespace modloader

@@ -29,9 +29,9 @@ int main() {
 
     auto sorted = modloader::topologicalSort(dependencies);
     while (!sorted.empty()) {
-        auto const& dep = sorted.top();
+        auto const& dep = sorted.front();
         std::cout << "-" << dep.object.path.filename() << std::endl;
-        sorted.pop();
+        sorted.pop_front();
     }
 }
 

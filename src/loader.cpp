@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <deque>
 #include <stack>
 #include <unordered_set>
 #include <unordered_map>
@@ -156,7 +157,7 @@ void sortDependencies(std::span<Dependency> deps) {
 // https://www.geeksforgeeks.org/cpp-program-for-topological-sorting/
 // Use mutable ref to avoid making a new vector that is sorted
 // TODO: Should we even bother?
-void topologicalSortRecurse(Dependency& main, StackDoubleFlow<Dependency>& stack, std::unordered_set<std::string_view>& visited) {
+void topologicalSortRecurse(Dependency& main, std::deque<Dependency>& stack, std::unordered_set<std::string_view>& visited) {
     visited.emplace(main.object.path.c_str());
     sortDependencies(main.dependencies);
 
@@ -166,11 +167,11 @@ void topologicalSortRecurse(Dependency& main, StackDoubleFlow<Dependency>& stack
         }
     }
 
-    stack.emplace(main);
+    stack.emplace_back(main);
 }
 
-StackDoubleFlow<Dependency> modloader::topologicalSort(std::span<Dependency const> const list) {
-    StackDoubleFlow<Dependency> dependencies;
+std::deque<Dependency> modloader::topologicalSort(std::span<Dependency const> const list) {
+    std::deque<Dependency> dependencies;
     std::unordered_set<std::string_view> visited;
 
     std::vector<Dependency> deps(list.begin(), list.end());
