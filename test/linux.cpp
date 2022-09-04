@@ -28,8 +28,10 @@ int main() {
     std::cout << std::string(3, '\n') << "Sorted:" << std::endl;
 
     auto sorted = modloader::topologicalSort(dependencies);
-    for (auto const& dep : dependencies) {
+    while (!sorted.empty()) {
+        auto const& dep = sorted.top();
         std::cout << "-" << dep.object.path.filename() << std::endl;
+        sorted.pop();
     }
 }
 

@@ -44,7 +44,7 @@ std::span<T> readManyAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t amo
 
 
 std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phase, std::filesystem::path const& name) {
-    std::unordered_map<LoadPhase, std::filesystem::path> pathsMap = {
+    static std::unordered_map<LoadPhase, std::filesystem::path> const pathsMap = {
         {LoadPhase::Libs, "libs"},
         {LoadPhase::EarlyMods, "early_mods"},
         {LoadPhase::Mods, "mods"}
@@ -57,10 +57,10 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
     // early mods before
     // libs first
     for (int i = static_cast<int>(phase); i <= static_cast<int>(LoadPhase::Libs); i++) {
-        paths.emplace(pathsMap[static_cast<LoadPhase>(i)]);
+        paths.emplace(pathsMap.at(static_cast<LoadPhase>(i)));
     }
 
-    auto dir = paths.top();
+    std::filesystem::path dir = paths.top();
     paths.pop();
 
     auto openedPhase = static_cast<LoadPhase>(phase);
@@ -74,16 +74,20 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
         }
 
         dir = paths.top();
+        check = std::filesystem::current_path() / "test" / dir / name;
         paths.pop();
-        openedPhase = static_cast<LoadPhase>(static_cast<int>(openedPhase) - 1);
+
+        openedPhase = static_cast<LoadPhase>(std::max(static_cast<int>(openedPhase) - 1, 0));
     }
+
+
 
     return {{SharedObject(check), openedPhase}};
 }
 
 //TODO: Use a map?
 std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase phase) const {
-    int fd = open(this->path.c_str(), O_RDONLY | O_CLOEXEC);
+    int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
 //                                   strerror(errno));
@@ -91,8 +95,8 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
         throw std::runtime_error("Unable to open file descriptor");
     }
 
-    struct stat st;
-    fstat(fd, &st);
+    struct stat64 st;
+    fstat64(fd, &st);
     size_t size = st.st_size;
 
     void *mapped = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
@@ -153,21 +157,12 @@ void sortDependencies(std::span<Dependency> deps) {
 // Use mutable ref to avoid making a new vector that is sorted
 // TODO: Should we even bother?
 void topologicalSortRecurse(Dependency& main, StackDoubleFlow<Dependency>& stack, std::unordered_set<std::string_view>& visited) {
-    if (visited.contains(main.object.path.c_str())) { return; }
-
     visited.emplace(main.object.path.c_str());
     sortDependencies(main.dependencies);
 
     for (auto& dep : main.dependencies) {
-        if (visited.contains(dep.object.path.c_str())) { continue; }
-
-        visited.emplace(dep.object.path.c_str());
-
-        sortDependencies(dep.dependencies);
-        for (auto& innerDep : dep.dependencies) {
-            if (!visited.contains(innerDep.object.path.c_str())) {
-                topologicalSortRecurse(innerDep, stack, visited);
-            }
+        if (!visited.contains(dep.object.path.c_str())) {
+            topologicalSortRecurse(dep, stack, visited);
         }
     }
 
@@ -182,7 +177,9 @@ StackDoubleFlow<Dependency> modloader::topologicalSort(std::span<Dependency cons
     sortDependencies(deps);
 
     for (Dependency& dep : deps) {
-        topologicalSortRecurse(dep, dependencies, visited);
+        if (!visited.contains(dep.object.path.c_str())) {
+            topologicalSortRecurse(dep, dependencies, visited);
+        }
     }
 
     return dependencies;
