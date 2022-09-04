@@ -27,17 +27,19 @@ using StackDoubleFlow = std::stack<T>;
 
 
 template<typename T>
-T& readAtOffset(std::span<uint8_t> f, size_t offset) {
-    return reinterpret_cast<T&>(f[offset]);
+T& readAtOffset(std::span<uint8_t> f, ptrdiff_t offset) {
+    return *reinterpret_cast<T*>(&f[offset]);
 }
 
-std::string_view readAtOffset(std::span<uint8_t> f, size_t offset, size_t size) {
-    return {reinterpret_cast<char const*>(f[offset]), size};
+std::string_view readAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t size) {
+    return {reinterpret_cast<char const*>(&f[offset]), size};
 }
 
 template<typename T>
-std::span<T> readManyAtOffset(std::span<uint8_t> f, size_t offset, size_t amount, size_t size) {
-    return {reinterpret_cast<T*>(f[offset]), amount * size};
+std::span<T> readManyAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t amount, size_t size) {
+    T* begin = reinterpret_cast<T*>(f.data() + offset);
+    T* end = begin + (amount * size);
+    return std::span<T>(begin, end);
 }
 
 
@@ -83,8 +85,7 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
 //                                   strerror(errno));
 //        SAFE_ABORT();
-        int i;
-        (&i)[5] = 0;
+        throw std::runtime_error("Unable to open file descriptor");
     }
 
     struct stat st;
@@ -93,29 +94,43 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
 
     void *mapped = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
 
+    if (mapped == MAP_FAILED) {
+        throw std::runtime_error("Unable to memory map");
+    }
+
     std::span<uint8_t> f(static_cast<uint8_t*>(mapped), static_cast<uint8_t*>(mapped) + size);
 
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
-    auto sections = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
+    auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
 
     std::vector<Dependency> dependencies;
 
-    for (auto it = sections.begin(); it != sections.end(); it++) {
+    for (auto it = sectionHeaders.begin(); it != sectionHeaders.end(); it++) {
         auto const& sectionHeader = *it;
         if (sectionHeader.sh_type != SHT_DYNAMIC) { continue; }
 
         for (size_t i = 0; i < sectionHeader.sh_size / sectionHeader.sh_entsize; i++) {
             auto dyn = readAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset);
 
-            if (dyn.d_tag == DT_NEEDED) {
-                std::string_view name = readAtOffset(f, sections[sectionHeader.sh_link].sh_offset, dyn.d_un.d_val);
+            if (dyn.d_tag != DT_NEEDED) {
+                continue;
+            }
 
-                auto optObj = getSharedObject(phase, name);
+            std::string_view name = readAtOffset(f, sectionHeaders[sectionHeader.sh_link].sh_offset, dyn.d_un.d_val);
 
-                if (optObj) {
-                    auto [obj, openedPhase] = *optObj;
-                    dependencies.emplace_back(obj, obj.getToLoad(openedPhase));
-                }
+            if (name.data() == nullptr) {
+                continue;
+            }
+
+            auto optObj = getSharedObject(phase, name);
+
+                std::ofstream fff(std::filesystem::current_path() / std::string("test") / ".txt");
+            fff << name << std::endl;
+                fff.flush();
+
+            if (optObj) {
+                auto [obj, openedPhase] = *optObj;
+                dependencies.emplace_back(obj, obj.getToLoad(openedPhase));
             }
         }
     }
