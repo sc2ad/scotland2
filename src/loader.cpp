@@ -32,46 +32,7 @@ struct Dependency {
 
     Dependency(SharedObject object, std::vector<Dependency> dependencies) : object(std::move(object)), dependencies(std::move(dependencies)) {}
 };
-//
-//template<typename T>
-//T readAtOffset(std::ifstream& f, size_t offset, size_t size = sizeof(T)) {
-//    auto pos = f.tellg();
-//
-//    T t;
-//    f.seekg(offset, std::ios::beg);
-//    f.read(reinterpret_cast<char*>(&t), size);
-//
-//    f.seekg(pos, std::ios::beg);
-//    return t;
-//}
-//
-//std::string readAtOffset(std::ifstream& f, size_t offset, size_t size) {
-//    auto pos = f.tellg();
-//
-//    char* t = static_cast<char*>(malloc(size));
-//    f.seekg(offset, std::ios::beg);
-//    f.read(t, size);
-//
-//    f.seekg(pos, std::ios::beg);
-//    std::string newStr(t);
-//    free(t);
-//
-//    return newStr;
-//}
-//
-//template<typename T>
-//std::vector<T> readManyAtOffset(std::ifstream& f, size_t offset, size_t amount, size_t size = sizeof(T)) {
-//    auto pos = f.tellg();
-//
-//    auto array = static_cast<T*>(malloc(amount * size));
-//    std::vector<T> t(array, array + (amount * size));
-//
-//    f.seekg(offset, std::ios::beg);
-//    f.read(reinterpret_cast<char*>(t.data()), size * amount);
-//
-//    f.seekg(pos, std::ios::beg);
-//    return t;
-//}
+
 template<typename T>
 T& readAtOffset(std::span<uint8_t> f, size_t offset) {
     return reinterpret_cast<T&>(f[offset]);
