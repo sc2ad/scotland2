@@ -53,7 +53,7 @@ inline std::unordered_map<LoadPhase, std::string> getLoadPhaseDirectories() {
     };
 }
 
-std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(const std::filesystem::path& dependencyDir, LoadPhase phase, std::filesystem::path const& name) {
+std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesystem::path const& dependencyDir, LoadPhase phase, std::filesystem::path const& name) {
     std::unordered_map<LoadPhase, std::string> const pathsMap = getLoadPhaseDirectories();
 
     StackDoubleFlow<std::string> paths;
@@ -91,7 +91,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(const std::fi
 }
 
 //TODO: Use a map?
-std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase) const {
+std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase phase) const {
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -206,7 +206,7 @@ std::deque<Dependency> modloader::topologicalSort(std::span<DependencyResult con
     deps.reserve(list.size());
 
     for (auto const& result : list) {
-        const auto *dep = get_if<Dependency>(&result);
+        auto const*dep = get_if<Dependency>(&result);
         if (dep == nullptr) { continue; }
 
         deps.emplace_back(*dep);
@@ -229,7 +229,7 @@ std::deque<Dependency> modloader::topologicalSort(std::span<Dependency const> co
     return dependencies;
 }
 
-std::vector<SharedObject> modloader::listModsInPhase(const std::filesystem::path& dependencyDir, LoadPhase phase) {
+std::vector<SharedObject> modloader::listModsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase) {
     if (phase == LoadPhase::Libs) {
         return {};
     }
@@ -271,7 +271,7 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
     std::vector<LoadResult> results;
 
     auto handleResult = [&](OpenLibraryResult const& result, SharedObject const& obj, std::vector<DependencyResult> const& dependencies) {
-        if (const auto *error = get_if<std::string>(&result)) {
+        if (auto const*error = get_if<std::string>(&result)) {
             results.emplace_back(FailedMod(obj, *error, dependencies));
         } else {
             auto *handle = get<void*>(result);
@@ -279,7 +279,7 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
             ModInfo modInfo;
 
             auto setupFn = getFunction<SetupFunc>(handle, "setup");
-            auto loadFn = getFunction<LoadFunc>(handle, "setup");
+            auto loadFn = getFunction<LoadFunc>(handle, "load");
 
             // TRY/CATCH HERE?
             if (setupFn) {
