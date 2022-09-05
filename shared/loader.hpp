@@ -44,8 +44,11 @@ struct Dependency {
 
 struct ModInfo {
     std::string version;
-    size_t versionLong;
+    size_t versionLong{};
     std::string name;
+
+    ModInfo() = default;
+    ModInfo(std::string version, size_t versionLong, std::string name) : version(std::move(version)), versionLong(versionLong), name(std::move(name)) {}
 };
 
 struct FailedMod {
@@ -53,7 +56,7 @@ struct FailedMod {
     std::string failure;
     std::vector<DependencyResult> dependencies;
 
-    FailedMod(SharedObject  object, std::string failure, std::vector<DependencyResult> const& dependencies) : object(std::move(object)), failure(std::move(failure)), dependencies(dependencies) {}
+    FailedMod(SharedObject  object, std::string failure, std::vector<DependencyResult>  dependencies) : object(std::move(object)), failure(std::move(failure)), dependencies(std::move(dependencies)) {}
 };
 
 struct LoadedMod {

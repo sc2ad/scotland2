@@ -12,6 +12,7 @@
 #include <stack>
 #include <unordered_set>
 #include <unordered_map>
+#include <utility>
 
 #include <dlfcn.h>
 #include <elf.h>
@@ -140,9 +141,9 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
             // TODO: Add to a list of "failed" dependencies to locate
             if (optObj) {
                 auto [obj, openedPhase] = *optObj;
-                dependencies.emplace_back(Dependency(obj, obj.getToLoad(dependencyDir, openedPhase)));
+                dependencies.emplace_back(std::in_place_type_t<Dependency>{}, obj, obj.getToLoad(dependencyDir, openedPhase));
             } else {
-                dependencies.emplace_back(MissingDependency(name));
+                dependencies.emplace_back(std::in_place_type_t<MissingDependency>{}, name);
             }
         }
     }
@@ -242,7 +243,7 @@ std::vector<SharedObject> modloader::listModsInPhase(std::filesystem::path const
     for (auto const& file : std::filesystem::directory_iterator(dependencyDir/loadDir)) {
         if (file.is_directory()) {continue; }
 
-        objects.emplace_back(SharedObject(file.path()));
+        objects.emplace_back(file.path());
     }
 
     return objects;
@@ -272,7 +273,7 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
 
     auto handleResult = [&](OpenLibraryResult const& result, SharedObject const& obj, std::vector<DependencyResult> const& dependencies) {
         if (auto const*error = get_if<std::string>(&result)) {
-            results.emplace_back(FailedMod(obj, *error, dependencies));
+            results.emplace_back(std::in_place_type_t<FailedMod>{}, FailedMod(obj, *error, dependencies));
         } else {
             auto *handle = get<void*>(result);
 
@@ -286,7 +287,7 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
                 setupFn.value()(modInfo);
             }
 
-            results.emplace_back(LoadedMod(modInfo, obj, setupFn, loadFn, handle));
+            results.emplace_back(std::in_place_type_t<LoadedMod>{},modInfo, obj, setupFn, loadFn, handle);
         }
     };
 
