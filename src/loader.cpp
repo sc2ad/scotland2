@@ -43,13 +43,16 @@ std::span<T> readManyAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t amo
     return std::span<T>(begin, end);
 }
 
-
-std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(std::filesystem::path dependencyDir, LoadPhase phase, std::filesystem::path const& name) {
-    std::unordered_map<LoadPhase, std::string> const pathsMap = {
+inline std::unordered_map<LoadPhase, std::string> getLoadPhaseDirectories() {
+    return {
         {LoadPhase::Libs, "libs"},
         {LoadPhase::EarlyMods, "early_mods"},
         {LoadPhase::Mods, "mods"}
     };
+}
+
+std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(const std::filesystem::path& dependencyDir, LoadPhase phase, std::filesystem::path const& name) {
+    std::unordered_map<LoadPhase, std::string> const pathsMap = getLoadPhaseDirectories();
 
     StackDoubleFlow<std::string> paths;
 
@@ -86,7 +89,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(std::filesyste
 }
 
 //TODO: Use a map?
-std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(std::filesystem::path dependencyDir, LoadPhase phase) const {
+std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase) const {
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -130,7 +133,7 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(std::files
                 continue;
             }
 
-            auto optObj = getSharedObject(dependencyDir, phase, name);
+            auto optObj = findSharedObject(dependencyDir, phase, name);
 
             // TODO: Add to a list of "failed" dependencies to locate
             if (optObj) {
@@ -184,4 +187,51 @@ std::deque<Dependency> modloader::topologicalSort(std::span<Dependency const> co
     }
 
     return dependencies;
+}
+
+std::vector<SharedObject> modloader::listToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase) {
+    if (phase == LoadPhase::Libs) {
+        return {};
+    }
+
+    auto const loadDirs = getLoadPhaseDirectories();
+    std::filesystem::path const& loadDir = loadDirs.at(phase);
+
+    std::vector<SharedObject> objects;
+
+    for (auto const& file : std::filesystem::directory_iterator(dependencyDir/loadDir)) {
+        if (file.is_directory()) {continue; }
+
+        objects.emplace_back(SharedObject(file.path()));
+    }
+
+    return objects;
+}
+
+void openLibrary(std::filesystem::path const& path) {
+    // TODO:
+}
+
+std::vector<SharedObject> modloader::loadMods(std::span<SharedObject const> const mods, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
+    std::vector<SharedObject> failedMods;
+
+    // TODO: Handle failed mods to load
+    for (auto const& mod : mods) {
+        if (skipLoad.contains(mod.path)) {continue;}
+
+        auto deps = mod.getToLoad(dependencyDir, phase);
+        auto sorted = modloader::topologicalSort(deps);
+
+        for (auto const& dep : sorted) {
+            if (skipLoad.contains(dep.object.path)) {continue;}
+
+            openLibrary(dep.object.path);
+            skipLoad.emplace(dep.object.path);
+        }
+
+        openLibrary(mod.path);
+        skipLoad.emplace(mod.path);
+    }
+
+    return failedMods;
 }
