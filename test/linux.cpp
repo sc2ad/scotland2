@@ -1,7 +1,7 @@
 #ifdef LINUX_TEST
 
 #include <iostream>
-#include "loader.hpp"
+#include "internal-loader.hpp"
 
 void logDependencies(std::span<modloader::DependencyResult const> dependencies, size_t indent = 1) {
     for (auto const& result : dependencies) {
