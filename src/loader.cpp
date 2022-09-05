@@ -89,7 +89,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(const std::fi
 }
 
 //TODO: Use a map?
-std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase) const {
+std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase) const {
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -113,7 +113,7 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(const std:
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
     auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shentsize, elf.e_shnum);
 
-    std::vector<Dependency> dependencies;
+    std::vector<DependencyResult> dependencies;
 
     for (auto it = sectionHeaders.begin(); it != sectionHeaders.end(); it++) {
         auto const& sectionHeader = *it;
@@ -138,7 +138,9 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(const std:
             // TODO: Add to a list of "failed" dependencies to locate
             if (optObj) {
                 auto [obj, openedPhase] = *optObj;
-                dependencies.emplace_back(obj, obj.getToLoad(dependencyDir, openedPhase));
+                dependencies.emplace_back(Dependency(obj, obj.getToLoad(dependencyDir, openedPhase)));
+            } else {
+                dependencies.emplace_back(MissingDependency(name));
             }
         }
     }
@@ -157,6 +159,26 @@ void sortDependencies(std::span<Dependency> deps) {
     });
 }
 
+void sortDependencies(std::span<DependencyResult> deps) {
+    std::stable_sort(deps.begin(), deps.end(), [](DependencyResult const& a, DependencyResult const& b) {
+        std::string_view aPath;
+        std::string_view bPath;
+        if (holds_alternative<Dependency>(a)) {
+            aPath = get<Dependency>(a).object.path.c_str();
+        } else {
+            aPath = get<MissingDependency>(a);
+        }
+
+        if (holds_alternative<Dependency>(b)) {
+            bPath = get<Dependency>(b).object.path.c_str();
+        } else {
+            bPath = get<MissingDependency>(b);
+        }
+
+        return aPath > bPath;
+    });
+}
+
 // https://www.geeksforgeeks.org/cpp-program-for-topological-sorting/
 // Use mutable ref to avoid making a new vector that is sorted
 // TODO: Should we even bother?
@@ -168,11 +190,27 @@ void topologicalSortRecurse(Dependency& main, std::deque<Dependency>& stack, std
     visited.emplace(main.object.path.c_str());
     sortDependencies(main.dependencies);
 
-    for (auto& dep : main.dependencies) {
-        topologicalSortRecurse(dep, stack, visited);
+    for (auto& depResult : main.dependencies) {
+        auto *dep = get_if<Dependency>(&depResult);
+        if (dep == nullptr) { continue; }
+        topologicalSortRecurse(*dep, stack, visited);
     }
 
     stack.emplace_back(main);
+}
+
+std::deque<Dependency> modloader::topologicalSort(std::span<DependencyResult const> const list) {
+    std::vector<Dependency> deps;
+    deps.reserve(list.size());
+
+    for (auto const& result : list) {
+        const auto *dep = get_if<Dependency>(&result);
+        if (dep == nullptr) { continue; }
+
+        deps.emplace_back(*dep);
+    }
+
+    return topologicalSort(deps);
 }
 
 std::deque<Dependency> modloader::topologicalSort(std::span<Dependency const> const list) {

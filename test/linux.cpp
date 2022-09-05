@@ -3,10 +3,21 @@
 #include <iostream>
 #include "loader.hpp"
 
-void logDependencies(std::span<modloader::Dependency const> dependencies, size_t indent = 1) {
-    for (auto const& dep : dependencies) {
-        std::cout << std::string(indent * 3, ' ') << '-' << dep.object.path.filename() << std::endl;
-        logDependencies(dep.dependencies, indent + 1);
+void logDependencies(std::span<modloader::DependencyResult const> dependencies, size_t indent = 1) {
+    for (auto const& result : dependencies) {
+        std::string depName;
+
+        const auto *dep = get_if<modloader::Dependency>(&result);
+        if (dep != nullptr) {
+            depName = dep->object.path.filename();
+        } else {
+            depName = "missing dependency " + get<modloader::MissingDependency>(result);
+        }
+
+        std::cout << std::string(indent * 3, ' ') << '-' << depName << std::endl;
+        if (dep != nullptr) {
+            logDependencies(dep->dependencies, indent + 1);
+        }
     }
 }
 
@@ -20,10 +31,7 @@ int main() {
 
     auto dependencies = mod.getToLoad(std::filesystem::current_path() / "test", modloader::LoadPhase::Mods);
 
-    for (auto const& dep : dependencies) {
-        std::cout << "-" << dep.object.path.filename() << std::endl;
-        logDependencies(dep.dependencies);
-    }
+    logDependencies(dependencies);
 
     std::cout << std::string(3, '\n') << "Sorted:" << std::endl;
 
