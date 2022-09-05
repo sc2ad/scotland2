@@ -20,7 +20,7 @@ struct SharedObject {
     std::filesystem::path path;
     explicit SharedObject(std::filesystem::path path) : path(std::move(path)) {}
 
-    [[nodiscard]] std::vector<modloader::Dependency> getToLoad(LoadPhase phase) const;
+    [[nodiscard]] std::vector<modloader::Dependency> getToLoad(std::filesystem::path dependencyDir, LoadPhase phase) const;
 };
 
 struct Dependency {
@@ -30,5 +30,5 @@ struct Dependency {
     Dependency(SharedObject object, std::vector<Dependency> dependencies) : object(std::move(object)), dependencies(std::move(dependencies)) {}
 };
 
-std::deque<Dependency> topologicalSort(std::span<Dependency const> const list);
+std::deque<Dependency> topologicalSort(std::span<Dependency const> list);
 }  // namespace modloader

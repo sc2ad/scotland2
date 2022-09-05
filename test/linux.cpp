@@ -18,7 +18,7 @@ int main() {
 
     std::cout << "Loading " << mod.path.c_str() << std::endl;
 
-    auto dependencies = mod.getToLoad(modloader::LoadPhase::Mods);
+    auto dependencies = mod.getToLoad(std::filesystem::current_path() / "test", modloader::LoadPhase::Mods);
 
     for (auto const& dep : dependencies) {
         std::cout << "-" << dep.object.path.filename() << std::endl;

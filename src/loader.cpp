@@ -44,8 +44,8 @@ std::span<T> readManyAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t amo
 }
 
 
-std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phase, std::filesystem::path const& name) {
-    static std::unordered_map<LoadPhase, std::filesystem::path> const pathsMap = {
+std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(std::filesystem::path dependencyDir, LoadPhase phase, std::filesystem::path const& name) {
+    std::unordered_map<LoadPhase, std::string> const pathsMap = {
         {LoadPhase::Libs, "libs"},
         {LoadPhase::EarlyMods, "early_mods"},
         {LoadPhase::Mods, "mods"}
@@ -66,8 +66,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
 
     auto openedPhase = static_cast<LoadPhase>(phase);
 
-    //TODO: Fix
-    auto check = std::filesystem::current_path() / "test" / dir / name;
+    auto check = dependencyDir / dir / name;
 
     while (!std::filesystem::exists(check)) {
         if (paths.empty()) {
@@ -75,7 +74,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
         }
 
         dir = paths.top();
-        check = std::filesystem::current_path() / "test" / dir / name;
+        check = dependencyDir / dir / name;
         paths.pop();
 
         openedPhase = static_cast<LoadPhase>(std::max(static_cast<int>(openedPhase) - 1, 0));
@@ -87,7 +86,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> getSharedObject(LoadPhase phas
 }
 
 //TODO: Use a map?
-std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase phase) const {
+std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(std::filesystem::path dependencyDir, LoadPhase phase) const {
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
 //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -131,11 +130,12 @@ std::vector<modloader::Dependency> modloader::SharedObject::getToLoad(LoadPhase 
                 continue;
             }
 
-            auto optObj = getSharedObject(phase, name);
+            auto optObj = getSharedObject(dependencyDir, phase, name);
 
+            // TODO: Add to a list of "failed" dependencies to locate
             if (optObj) {
                 auto [obj, openedPhase] = *optObj;
-                dependencies.emplace_back(obj, obj.getToLoad(openedPhase));
+                dependencies.emplace_back(obj, obj.getToLoad(dependencyDir, openedPhase));
             }
         }
     }
