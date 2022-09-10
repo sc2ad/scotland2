@@ -1,18 +1,6 @@
 #include "loader.hpp"
 #include "internal-loader.hpp"
-
-#include <string>
-#include <utility>
-#include <vector>
-#include <span>
-#include <filesystem>
-#include <fstream>
-#include <optional>
-#include <deque>
-#include <stack>
-#include <unordered_set>
-#include <unordered_map>
-#include <utility>
+#include "utils.hpp"
 
 #include <dlfcn.h>
 #include <elf.h>
@@ -20,6 +8,17 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <cstdlib>
+#include <deque>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <span>
+#include <stack>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
 // I wrote all of this while being tempted by Stack to use rust
 // temptation is very strong
@@ -91,7 +90,6 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
     return {{SharedObject(check), openedPhase}};
 }
 
-//TODO: Use a map?
 std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase phase) const {
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
@@ -101,7 +99,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
         throw std::runtime_error("Unable to open file descriptor");
     }
 
-    struct stat64 st;
+    struct stat64 st{};
     fstat64(fd, &st);
     size_t size = st.st_size;
 
@@ -143,7 +141,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
                 auto [obj, openedPhase] = *optObj;
                 dependencies.emplace_back(std::in_place_type_t<Dependency>{}, obj, obj.getToLoad(dependencyDir, openedPhase));
             } else {
-                dependencies.emplace_back(std::in_place_type_t<MissingDependency>{}, name);
+                dependencies.emplace_back(std::in_place_type_t<MissingDependency>{}, copyStrC(name));
             }
         }
     }
@@ -273,11 +271,12 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
 
     auto handleResult = [&](OpenLibraryResult const& result, SharedObject const& obj, std::vector<DependencyResult> const& dependencies) {
         if (auto const*error = get_if<std::string>(&result)) {
-            results.emplace_back(std::in_place_type_t<FailedMod>{}, FailedMod(obj, *error, dependencies));
+            results.emplace_back(std::in_place_type_t<FailedMod>{}, FailedMod(obj, copyStrC(*error), dependencies));
         } else {
             auto *handle = get<void*>(result);
 
-            ModInfo modInfo;
+            // TODO: unsafe
+            ModInfo modInfo(nullptr, nullptr);
 
             auto setupFn = getFunction<SetupFunc>(handle, "setup");
             auto loadFn = getFunction<LoadFunc>(handle, "load");

@@ -20,7 +20,9 @@ enum struct LoadPhase {
     Libs = 2,
 };
 
-using MissingDependency = std::string;
+using ModLoaderString = const char*;
+
+using MissingDependency = ModLoaderString;
 using DependencyResult = std::variant<MissingDependency, Dependency>;
 
 struct ModInfo;
@@ -43,20 +45,21 @@ struct Dependency {
 };
 
 struct ModInfo {
-    std::string version;
+    ModLoaderString version{}; // nullable
     size_t versionLong{};
-    std::string name;
+    ModLoaderString name{}; // nullable
 
-    ModInfo() = default;
-    ModInfo(std::string version, size_t versionLong, std::string name) : version(std::move(version)), versionLong(versionLong), name(std::move(name)) {}
+    ModInfo(ModLoaderString version, size_t versionLong, ModLoaderString name) : version(version), versionLong(versionLong), name(name) {}
+    // TODO: Remove and force versionLong to be provided?
+    ModInfo(ModLoaderString version,  ModLoaderString name) : version(version), versionLong(1), name(name) {}
 };
 
 struct FailedMod {
     SharedObject object;
-    std::string failure;
+    ModLoaderString failure;
     std::vector<DependencyResult> dependencies;
 
-    FailedMod(SharedObject  object, std::string failure, std::vector<DependencyResult>  dependencies) : object(std::move(object)), failure(std::move(failure)), dependencies(std::move(dependencies)) {}
+    FailedMod(SharedObject object, ModLoaderString failure, std::vector<DependencyResult>  dependencies) : object(std::move(object)), failure(std::move(failure)), dependencies(std::move(dependencies)) {}
 };
 
 struct LoadedMod {

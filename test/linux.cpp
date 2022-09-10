@@ -11,7 +11,7 @@ void logDependencies(std::span<modloader::DependencyResult const> dependencies, 
         if (dep != nullptr) {
             depName = dep->object.path.filename();
         } else {
-            depName = "missing dependency " + get<modloader::MissingDependency>(result);
+            depName = "missing dependency " + std::string(get<modloader::MissingDependency>(result));
         }
 
         std::cout << std::string(indent * 3, ' ') << '-' << depName << std::endl;
