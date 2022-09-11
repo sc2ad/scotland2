@@ -241,15 +241,22 @@ std::vector<SharedObject> modloader::listModsInPhase(std::filesystem::path const
     for (auto const& file : std::filesystem::directory_iterator(dependencyDir/loadDir)) {
         if (file.is_directory()) {continue; }
 
+        if (file.path().extension() != ".so") { continue;}
+        if (!file.path().filename().string().starts_with("lib")) {continue;}
+
         objects.emplace_back(file.path());
     }
 
     return objects;
 }
 
+// handle or failure message
 using OpenLibraryResult = std::variant<void*, std::string>;
 
 OpenLibraryResult openLibrary(std::filesystem::path const& path) {
+    if (!std::filesystem::exists(path)) {
+        throw std::runtime_error("Path does not exist on file system!");
+    }
     auto *handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
 //    protect();
     if (handle == nullptr) {
@@ -266,47 +273,61 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
     return ptr ? ptr : static_cast<std::optional<T>>(std::nullopt);
 }
 
+// This will throw if the mod path is in skipLoad
+LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
+    if (skipLoad.contains(mod.path)) {
+        // TODO: Log
+        throw std::runtime_error("Mod is already in skipLoad!");
+    }
+
+    auto handleResult = [&](OpenLibraryResult const& result,
+                            SharedObject const& obj,
+                            std::vector<DependencyResult> const& dependencies
+                            ) -> LoadResult {
+        if (auto const* error = get_if<std::string>(&result)) {
+            return FailedMod(obj, copyStrC(*error), dependencies);
+        }
+
+        auto* handle = get<void*>(result);
+
+        // TODO: unsafe
+        ModInfo modInfo(nullptr, nullptr);
+
+        auto setupFn = getFunction<SetupFunc>(handle, "setup");
+        auto loadFn = getFunction<LoadFunc>(handle, "load");
+
+        // TRY/CATCH HERE?
+        if (setupFn) {
+            setupFn.value()(modInfo);
+        }
+
+        return LoadedMod(modInfo, obj, setupFn, loadFn, handle);
+    };
+
+    auto deps = mod.getToLoad(dependencyDir, phase);
+    auto sorted = modloader::topologicalSort(deps);
+
+    for (auto const& dep : sorted) {
+        if (skipLoad.contains(dep.object.path)) {continue;}
+
+        auto result = openLibrary(dep.object.path);
+        skipLoad.emplace(dep.object.path);
+        handleResult(result, dep.object, dep.dependencies);
+    }
+
+    auto result = openLibrary(mod.path);
+    skipLoad.emplace(mod.path);
+
+    return handleResult(result, mod, deps);
+}
+
 std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const mods, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
     std::vector<LoadResult> results;
-
-    auto handleResult = [&](OpenLibraryResult const& result, SharedObject const& obj, std::vector<DependencyResult> const& dependencies) {
-        if (auto const*error = get_if<std::string>(&result)) {
-            results.emplace_back(std::in_place_type_t<FailedMod>{}, FailedMod(obj, copyStrC(*error), dependencies));
-        } else {
-            auto *handle = get<void*>(result);
-
-            // TODO: unsafe
-            ModInfo modInfo(nullptr, nullptr);
-
-            auto setupFn = getFunction<SetupFunc>(handle, "setup");
-            auto loadFn = getFunction<LoadFunc>(handle, "load");
-
-            // TRY/CATCH HERE?
-            if (setupFn) {
-                setupFn.value()(modInfo);
-            }
-
-            results.emplace_back(std::in_place_type_t<LoadedMod>{},modInfo, obj, setupFn, loadFn, handle);
-        }
-    };
 
     for (auto const& mod : mods) {
         if (skipLoad.contains(mod.path)) {continue;}
 
-        auto deps = mod.getToLoad(dependencyDir, phase);
-        auto sorted = modloader::topologicalSort(deps);
-
-        for (auto const& dep : sorted) {
-            if (skipLoad.contains(dep.object.path)) {continue;}
-
-            auto result = openLibrary(dep.object.path);
-            skipLoad.emplace(dep.object.path);
-            handleResult(result, dep.object, dep.dependencies);
-        }
-
-        auto result = openLibrary(mod.path);
-        skipLoad.emplace(mod.path);
-        handleResult(result, mod, deps);
+        results.emplace_back(modloader::loadMod(mod, dependencyDir, skipLoad, phase));
     }
 
     return results;

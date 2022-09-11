@@ -17,6 +17,7 @@ using LoadResult = std::variant<FailedMod, LoadedMod>;
 std::vector<SharedObject> listModsInPhase(const std::filesystem::path& dependencyDir, LoadPhase phase);
 
 /// List of failed mods to load
-std::vector<LoadResult> loadMods(std::span<SharedObject const> mods, const std::filesystem::path& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+std::vector<LoadResult> loadMods(std::span<SharedObject const> mods, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+std::variant<FailedMod, LoadedMod> loadMod(SharedObject const& mod, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase);
 
 }  // namespace modloader
