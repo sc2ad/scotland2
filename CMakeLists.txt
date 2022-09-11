@@ -74,6 +74,7 @@ if (${BUILD_FOR} STREQUAL LINUX)
 
     # add include dir as include dir
     target_include_directories(${testname} PRIVATE ${INCLUDE_DIR})
+    target_include_directories(${testname} PRIVATE ./test/)
     # add shared dir as include dir
     target_include_directories(${testname} PUBLIC ${SHARED_DIR})
 
