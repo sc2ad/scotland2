@@ -66,6 +66,7 @@ MESSAGE(STATUS "extern added!")
 
 
 if (${BUILD_FOR} STREQUAL LINUX)
+    message("Building tests")
     RECURSE_FILES(cpp_test_file_list ./test/*.cpp)
 
     set(testname BootstrapTest)

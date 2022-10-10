@@ -58,3 +58,4 @@ qpm.shared.json
 extern.cmake
 qpm_defines.cmake
 build/
+build_linux/
