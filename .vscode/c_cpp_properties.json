@@ -35,7 +35,7 @@
       "name": "Linux",
       "cStandard": "c11",
       "cppStandard": "c++20",
-      "intelliSenseMode": "clang-x64",
+      "intelliSenseMode": "linux-clang-x64",
       "compileCommands": "${workspaceFolder}/build_linux/compile_commands.json"
     }
   ],

@@ -28,17 +28,16 @@ using namespace modloader;
 template <typename T>
 using StackDoubleFlow = std::stack<T>;
 
-
-template<typename T>
+template <typename T>
 T& readAtOffset(std::span<uint8_t> f, ptrdiff_t offset) {
     return *reinterpret_cast<T*>(&f[offset]);
 }
 
 std::string_view readAtOffset(std::span<uint8_t> f, ptrdiff_t offset) {
-    return {reinterpret_cast<char const*>(&f[offset])};
+    return { reinterpret_cast<char const*>(&f[offset]) };
 }
 
-template<typename T>
+template <typename T>
 std::span<T> readManyAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t amount, size_t size) {
     T* begin = reinterpret_cast<T*>(f.data() + offset);
     T* end = begin + (amount * size);
@@ -46,11 +45,7 @@ std::span<T> readManyAtOffset(std::span<uint8_t> f, ptrdiff_t offset, size_t amo
 }
 
 inline std::unordered_map<LoadPhase, std::string> getLoadPhaseDirectories() {
-    return {
-        {LoadPhase::Libs, "libs"},
-        {LoadPhase::EarlyMods, "early_mods"},
-        {LoadPhase::Mods, "mods"}
-    };
+    return { { LoadPhase::Libs, "libs" }, { LoadPhase::EarlyMods, "early_mods" }, { LoadPhase::Mods, "mods" } };
 }
 
 std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesystem::path const& dependencyDir, LoadPhase phase, std::filesystem::path const& name) {
@@ -85,25 +80,23 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
         openedPhase = static_cast<LoadPhase>(std::max(static_cast<int>(openedPhase) - 1, 0));
     }
 
-
-
-    return {{SharedObject(check), openedPhase}};
+    return { { SharedObject(check), openedPhase } };
 }
 
 std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase phase) const {
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
-//        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
-//                                   strerror(errno));
-//        SAFE_ABORT();
+        //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
+        //                                   strerror(errno));
+        //        SAFE_ABORT();
         throw std::runtime_error("Unable to open file descriptor");
     }
 
-    struct stat64 st{};
+    struct stat64 st {};
     fstat64(fd, &st);
     size_t size = st.st_size;
 
-    void *mapped = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    void* mapped = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
 
     if (mapped == MAP_FAILED) {
         throw std::runtime_error("Unable to memory map");
@@ -118,10 +111,13 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
 
     for (auto it = sectionHeaders.begin(); it != sectionHeaders.end(); it++) {
         auto const& sectionHeader = *it;
-        if (sectionHeader.sh_type != SHT_DYNAMIC) { continue; }
+        if (sectionHeader.sh_type != SHT_DYNAMIC) {
+            continue;
+        }
 
-
-        auto dynamics = readManyAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset, sectionHeader.sh_size / sectionHeader.sh_entsize, 1);
+        // divide by zero
+        auto amount = sectionHeader.sh_entsize > 0 ? sectionHeader.sh_size / sectionHeader.sh_entsize : 0;
+        auto dynamics = readManyAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset, amount, 1);
 
         for (auto const& dyn : dynamics) {
             if (dyn.d_tag != DT_NEEDED) {
@@ -146,7 +142,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
         }
     }
 
-    if(munmap(mapped, size) == -1) {
+    if (munmap(mapped, size) == -1) {
         // TODO: Error check
         // this todo will never be done, I'm betting on it
     }
@@ -155,9 +151,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
 }
 
 void sortDependencies(std::span<Dependency> deps) {
-    std::stable_sort(deps.begin(), deps.end(), [](Dependency const& a, Dependency const& b) {
-        return a.object.path > b.object.path;
-    });
+    std::stable_sort(deps.begin(), deps.end(), [](Dependency const& a, Dependency const& b) { return a.object.path > b.object.path; });
 }
 
 void sortDependencies(std::span<DependencyResult> deps) {
@@ -192,8 +186,10 @@ void topologicalSortRecurse(Dependency& main, std::deque<Dependency>& stack, std
     sortDependencies(main.dependencies);
 
     for (auto& depResult : main.dependencies) {
-        auto *dep = get_if<Dependency>(&depResult);
-        if (dep == nullptr) { continue; }
+        auto* dep = get_if<Dependency>(&depResult);
+        if (dep == nullptr) {
+            continue;
+        }
         topologicalSortRecurse(*dep, stack, visited);
     }
 
@@ -205,8 +201,10 @@ std::deque<Dependency> modloader::topologicalSort(std::span<DependencyResult con
     deps.reserve(list.size());
 
     for (auto const& result : list) {
-        auto const*dep = get_if<Dependency>(&result);
-        if (dep == nullptr) { continue; }
+        auto const* dep = get_if<Dependency>(&result);
+        if (dep == nullptr) {
+            continue;
+        }
 
         deps.emplace_back(*dep);
     }
@@ -238,11 +236,17 @@ std::vector<SharedObject> modloader::listModsInPhase(std::filesystem::path const
 
     std::vector<SharedObject> objects;
 
-    for (auto const& file : std::filesystem::directory_iterator(dependencyDir/loadDir)) {
-        if (file.is_directory()) {continue; }
+    for (auto const& file : std::filesystem::directory_iterator(dependencyDir / loadDir)) {
+        if (file.is_directory()) {
+            continue;
+        }
 
-        if (file.path().extension() != ".so") { continue;}
-        if (!file.path().filename().string().starts_with("lib")) {continue;}
+        if (file.path().extension() != ".so") {
+            continue;
+        }
+        if (!file.path().filename().string().starts_with("lib")) {
+            continue;
+        }
 
         objects.emplace_back(file.path());
     }
@@ -257,14 +261,14 @@ OpenLibraryResult openLibrary(std::filesystem::path const& path) {
     if (!std::filesystem::exists(path)) {
         throw std::runtime_error("Path does not exist on file system!");
     }
-    auto *handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
-//    protect();
+    auto* handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
+    //    protect();
     if (handle == nullptr) {
         // Error logging (for if symbols cannot be resolved)
         return dlerror();
     }
 
-    return {handle};
+    return { handle };
 }
 
 template <typename T>
@@ -280,10 +284,7 @@ LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path con
         throw std::runtime_error("Mod is already in skipLoad!");
     }
 
-    auto handleResult = [&](OpenLibraryResult const& result,
-                            SharedObject const& obj,
-                            std::vector<DependencyResult> const& dependencies
-                            ) -> LoadResult {
+    auto handleResult = [&](OpenLibraryResult const& result, SharedObject const& obj, std::vector<DependencyResult> const& dependencies) -> LoadResult {
         if (auto const* error = get_if<std::string>(&result)) {
             return FailedMod(obj, copyStrC(*error), dependencies);
         }
@@ -308,7 +309,9 @@ LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path con
     auto sorted = modloader::topologicalSort(deps);
 
     for (auto const& dep : sorted) {
-        if (skipLoad.contains(dep.object.path)) {continue;}
+        if (skipLoad.contains(dep.object.path)) {
+            continue;
+        }
 
         auto result = openLibrary(dep.object.path);
         skipLoad.emplace(dep.object.path);
@@ -325,7 +328,9 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
     std::vector<LoadResult> results;
 
     for (auto const& mod : mods) {
-        if (skipLoad.contains(mod.path)) {continue;}
+        if (skipLoad.contains(mod.path)) {
+            continue;
+        }
 
         results.emplace_back(modloader::loadMod(mod, dependencyDir, skipLoad, phase));
     }
