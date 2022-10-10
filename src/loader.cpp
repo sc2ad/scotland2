@@ -105,7 +105,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
     std::span<uint8_t> f(static_cast<uint8_t*>(mapped), static_cast<uint8_t*>(mapped) + size);
 
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
-    auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shentsize, elf.e_shnum);
+    auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
 
     std::vector<DependencyResult> dependencies;
 
@@ -143,9 +143,11 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
     }
 
     if (munmap(mapped, size) == -1) {
-        // TODO: Error check
+        // TODO:  Error check
         // this todo will never be done, I'm betting on it
     }
+
+    close(fd);
 
     return dependencies;
 }
