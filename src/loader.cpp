@@ -87,8 +87,10 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
                                                                             std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const {
     auto depIt = loadedDependencies.find(this->path.c_str());
 
-    if (depIt != loadedDependencies.end()) return depIt->second;
-
+    if (depIt != loadedDependencies.end()) {
+        return depIt->second;
+    }
+    
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
         //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -282,6 +284,7 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
 }
 
 // This will throw if the mod path is in skipLoad
+// TODO: Return LoadResult vector since libraries are also loaded here?
 LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
     if (skipLoad.contains(mod.path)) {
         // TODO: Log
@@ -319,6 +322,9 @@ LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path con
 
         auto result = openLibrary(dep.object.path);
         skipLoad.emplace(dep.object.path);
+        // ignore result
+        // this is however a problem since library load errors
+        // are ignored
         handleResult(result, dep.object, dep.dependencies);
     }
 
