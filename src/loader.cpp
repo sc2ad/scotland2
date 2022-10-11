@@ -83,7 +83,12 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
     return { { SharedObject(check), openedPhase } };
 }
 
-std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase phase) const {
+std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase phase,
+                                                                            std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const {
+    auto depIt = loadedDependencies.find(this->path.c_str());
+
+    if (depIt != loadedDependencies.end()) return depIt->second;
+
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
         //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -106,7 +111,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
 
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
 
-    std::vector<DependencyResult> dependencies;
+    std::vector<DependencyResult>& dependencies = loadedDependencies[this->path.c_str()];
 
     auto getSectionHeader = [&](size_t s) { return *reinterpret_cast<Elf64_Shdr*>((uint8_t*)f.data() + elf.e_shoff + (elf.e_shentsize * s)); };
 
