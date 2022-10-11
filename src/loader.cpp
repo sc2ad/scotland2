@@ -105,26 +105,27 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
     std::span<uint8_t> f(static_cast<uint8_t*>(mapped), static_cast<uint8_t*>(mapped) + size);
 
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
-    auto sectionHeaders = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
 
     std::vector<DependencyResult> dependencies;
 
-    for (auto it = sectionHeaders.begin(); it != sectionHeaders.end(); it++) {
-        auto const& sectionHeader = *it;
+    auto getSectionHeader = [&](size_t s) { return *reinterpret_cast<Elf64_Shdr*>((uint8_t*)f.data() + elf.e_shoff + (elf.e_shentsize * s)); };
+
+    for (size_t s = 0; s < elf.e_shnum; s++) {
+        auto const& sectionHeader = getSectionHeader(s);
         if (sectionHeader.sh_type != SHT_DYNAMIC) {
             continue;
         }
 
         // divide by zero
-        auto amount = sectionHeader.sh_entsize > 0 ? sectionHeader.sh_size / sectionHeader.sh_entsize : 0;
-        auto dynamics = readManyAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset, amount, 1);
+        size_t amount = sectionHeader.sh_entsize > 0 ? sectionHeader.sh_size / sectionHeader.sh_entsize : 0;
 
-        for (auto const& dyn : dynamics) {
+        for (size_t d = 0; d < amount; d++) {
+            auto const& dyn = *reinterpret_cast<Elf64_Dyn*>((uint8_t*)f.data() + sectionHeader.sh_offset + (sectionHeader.sh_entsize * d));
             if (dyn.d_tag != DT_NEEDED) {
                 continue;
             }
 
-            std::string_view name = readAtOffset(f, sectionHeaders[sectionHeader.sh_link].sh_offset + dyn.d_un.d_val);
+            std::string_view name = readAtOffset(f, getSectionHeader(sectionHeader.sh_link).sh_offset + dyn.d_un.d_val);
 
             if (name.data() == nullptr || name.empty()) {
                 continue;
@@ -142,11 +143,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
         }
     }
 
-    if (munmap(mapped, size) == -1) {
-        // TODO:  Error check
-        // this todo will never be done, I'm betting on it
-    }
-
+    munmap(mapped, size);
     close(fd);
 
     return dependencies;
