@@ -90,7 +90,7 @@ std::vector<modloader::DependencyResult> modloader::SharedObject::getToLoad(std:
     if (depIt != loadedDependencies.end()) {
         return depIt->second;
     }
-    
+
     int fd = open64(this->path.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd == -1) {
         //        MLogger::GetLogger().error("Error reading file at %s: %s", path.c_str(),
@@ -284,8 +284,7 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
 }
 
 // This will throw if the mod path is in skipLoad
-// TODO: Return LoadResult vector since libraries are also loaded here?
-LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
+std::vector<LoadResult> modloader::loadMod(SharedObject const& mod, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
     if (skipLoad.contains(mod.path)) {
         // TODO: Log
         throw std::runtime_error("Mod is already in skipLoad!");
@@ -315,6 +314,9 @@ LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path con
     auto deps = mod.getToLoad(dependencyDir, phase);
     auto sorted = modloader::topologicalSort(deps);
 
+    std::vector<LoadResult> results;
+    results.reserve(sorted.size() + 1);
+
     for (auto const& dep : sorted) {
         if (skipLoad.contains(dep.object.path)) {
             continue;
@@ -322,16 +324,18 @@ LoadResult modloader::loadMod(SharedObject const& mod, std::filesystem::path con
 
         auto result = openLibrary(dep.object.path);
         skipLoad.emplace(dep.object.path);
-        // ignore result
-        // this is however a problem since library load errors
-        // are ignored
-        handleResult(result, dep.object, dep.dependencies);
+        auto const& handled = results.emplace_back(handleResult(result, dep.object, dep.dependencies));
+
+        if (get_if<FailedMod>(&handled)) {
+            return results;
+        }
     }
 
     auto result = openLibrary(mod.path);
     skipLoad.emplace(mod.path);
 
-    return handleResult(result, mod, deps);
+    results.emplace_back(handleResult(result, mod, deps));
+    return results;
 }
 
 std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const mods, std::filesystem::path const& dependencyDir, std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
@@ -342,7 +346,8 @@ std::vector<LoadResult> modloader::loadMods(std::span<SharedObject const> const 
             continue;
         }
 
-        results.emplace_back(modloader::loadMod(mod, dependencyDir, skipLoad, phase));
+        auto otherResults = modloader::loadMod(mod, dependencyDir, skipLoad, phase);
+        std::move(otherResults.begin(), otherResults.end(), std::back_inserter(results));
     }
 
     return results;
