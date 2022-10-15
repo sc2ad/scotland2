@@ -1,3 +1,5 @@
+#ifndef LINUX_TEST
+
 #include <filesystem>
 #include "modloader-calls.hpp"
 #include "modloader.hpp"
@@ -22,3 +24,5 @@ MODLOADER_FUNC void modloader_accept_unity_handle(void* uhandle) noexcept {
 }
 
 MODLOADER_CHECK
+
+#endif

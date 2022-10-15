@@ -1,3 +1,4 @@
+#ifndef LINUX_TEST
 #include "modloader-calls.hpp"
 #include "modloader.hpp"
 
@@ -13,3 +14,5 @@ void Modloader::load_mods() {
     // Call setup() on these newly opened things
     // Also call load() on everything
 }
+
+#endif
