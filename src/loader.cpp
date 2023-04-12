@@ -75,7 +75,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
 std::vector<DependencyResult> MODLOADER_EXPORT
 SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase phase,
                         std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const {
-  auto depIt = loadedDependencies.find(path.string());
+  auto depIt = loadedDependencies.find(path.c_str());
 
   if (depIt != loadedDependencies.end()) {
     return depIt->second;
@@ -147,7 +147,7 @@ SharedObject::getToLoad(std::filesystem::path const& dependencyDir, LoadPhase ph
         } else {
           // Resolved dependency
           // TODO: Make this avoid potentially stack overflowing on extremely nested dependency trees
-          auto loadList = obj.getToLoad(dependencyDir, openedPhase);
+          auto loadList = obj.getToLoad(dependencyDir, openedPhase, loadedDependencies);
           dependencies.emplace_back(std::in_place_type_t<Dependency>{}, std::move(obj), loadList);
         }
       } else {
@@ -177,15 +177,15 @@ void sortDependencies(std::span<DependencyResult> deps) {
     std::string_view aPath;
     std::string_view bPath;
     if (holds_alternative<Dependency>(a)) {
-      aPath = get<Dependency>(a).object.path.string();
+      aPath = get<Dependency>(a).object.path.c_str();
     } else {
-      aPath = get<MissingDependency>(a).path.string();
+      aPath = get<MissingDependency>(a).path.c_str();
     }
 
     if (holds_alternative<Dependency>(b)) {
-      bPath = get<Dependency>(b).object.path.string();
+      bPath = get<Dependency>(b).object.path.c_str();
     } else {
-      bPath = get<MissingDependency>(b).path.string();
+      bPath = get<MissingDependency>(b).path.c_str();
     }
 
     return aPath > bPath;
