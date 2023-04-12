@@ -1,4 +1,4 @@
-Checks: 'clang-diagnostic-*,
+Checks: "clang-diagnostic-*,
     clang-analyzer-*,
     *,
     -llvmlibc-callee-namespace,
@@ -12,8 +12,9 @@ Checks: 'clang-diagnostic-*,
     -modernize-use-trailing-return-type,
     -cppcoreguidelines-avoid-non-const-global-variables,
     -llvm-header-guard,
-    -cppcoreguidelines-macro-usage'
-WarningsAsErrors: ''
-HeaderFilterRegex: ''
+    -cppcoreguidelines-macro-usage,
+    -abseil-*"
+WarningsAsErrors: ""
+HeaderFilterRegex: ""
 AnalyzeTemporaryDtors: false
 FormatStyle: file
