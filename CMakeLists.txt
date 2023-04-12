@@ -10,6 +10,7 @@ endif()
 include(qpm_defines.cmake)
 
 if (${BUILD_FOR} STREQUAL LINUX)
+    message("Building for Linux...")
     set(CMAKE_TOOLCHAIN_FILE "")
     set(CMAKE_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_NAME})
 
@@ -32,10 +33,11 @@ set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # compile options used
-add_compile_options(-frtti -fPIE -fPIC -fexceptions)
+add_compile_options(-fPIE -flto -fPIC -fno-exceptions -fvisibility=hidden)
 add_compile_definitions(MOD_VERSION=\"${MOD_VERSION}\")
 add_compile_definitions(MOD_ID=\"${MOD_ID}\")
-add_compile_options(-Wall -Wextra -Werror -Wpedantic -Wno-unused-parameter)
+add_compile_options(-Wall -Wextra -Werror -Wpedantic)
+# add_link_options(-fuse-ld=lld)
 # compile definitions used
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -79,10 +81,10 @@ if (${BUILD_FOR} STREQUAL LINUX)
     # add shared dir as include dir
     target_include_directories(${testname} PUBLIC ${SHARED_DIR})
 
-    target_link_libraries(${testname} PRIVATE ${COMPILE_ID})
+    target_link_libraries(${testname} PRIVATE ${COMPILE_ID} -ldl)
 
 else()
-    target_link_libraries(${COMPILE_ID} PRIVATE -llog)
+    target_link_libraries(${COMPILE_ID} PRIVATE -llog -ldl)
 
 add_custom_command(TARGET ${COMPILE_ID} POST_BUILD
         COMMAND ${CMAKE_STRIP} -g -S -d --strip-all

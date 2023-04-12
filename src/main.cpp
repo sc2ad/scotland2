@@ -1,28 +1,88 @@
 #ifndef LINUX_TEST
 
+#include <dlfcn.h>
+#include <jni.h>
 #include <filesystem>
-#include "modloader-calls.hpp"
-#include "modloader.hpp"
+#include <string>
+#include "log.h"
+#include "modloader.h"
+#include "protect.hpp"
 
-MODLOADER_FUNC void modloader_preload() noexcept {
+namespace {
+std::string application_id;
+std::filesystem::path modloader_path;
+std::filesystem::path files_dir;
+std::filesystem::path external_dir;
+std::filesystem::path libil2cppPath;
+
+using namespace std::literals::string_view_literals;
+constexpr std::string_view libil2cppName = "libil2cpp.so"sv;
+}  // namespace
+namespace modloader {
+
+MODLOADER_EXPORT std::filesystem::path const& get_modloader_path() noexcept {
+  return modloader_path;
 }
 
-MODLOADER_FUNC JNINativeInterface* modloader_main(JavaVM* v, JNIEnv* env, std::string_view loadSrc, JNINativeInterface* passthroughIface) noexcept {
-    // logpf(ANDROID_LOG_VERBOSE, "modloader_main called with vm: 0x%p, env: 0x%p, loadSrc: %s", v, env, loadSrc.data());
-
-    // jobject activity = getActivityFromUnityPlayer(env);
-    // if (activity) ensurePerms(env, activity);
-    std::filesystem::path fpath(loadSrc);
-    Modloader::set_modloader_path(fpath.parent_path());
-    Modloader::construct_mods();
-
-    return passthroughIface;
+MODLOADER_EXPORT std::filesystem::path const& get_files_dir() noexcept {
+  return files_dir;
 }
 
-MODLOADER_FUNC void modloader_accept_unity_handle(void* uhandle) noexcept {
-
+MODLOADER_EXPORT std::filesystem::path const& get_external_dir() noexcept {
+  return external_dir;
 }
 
-MODLOADER_CHECK
+MODLOADER_EXPORT std::string const& get_application_id() noexcept {
+  return application_id;
+}
+
+}  // namespace modloader
+
+MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const* modloaderPath, char const* filesDir,
+                                      char const* externalDir) noexcept {
+  // Here, we should copy all of these strings of interest and cache the env and VM.
+  application_id = appId;
+  modloader_path = modloaderPath;
+  files_dir = filesDir;
+  external_dir = externalDir;
+  if (env->GetJavaVM(&modloader_jvm) != 0) {
+    LOG_WARN("Failed to get JavaVM! Be careful when using it!");
+  }
+}
+
+MODLOADER_FUNC void modloader_load([[maybe_unused]] JNIEnv* env, char const* soDir) noexcept {
+  // Copy over soDir
+  libil2cppPath = soDir;
+  libil2cppPath = libil2cppPath.parent_path() / libil2cppName;
+  // dlopen all libs and dlopen early mods, call setup
+  //   modloader::open<LoadPhase::Libs>(files_dir);
+  //   modloader::open<LoadPhase::EarlyMods>(files_dir);
+}
+
+MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, void* unityHandle) noexcept {
+  // Call init on early mods, install il2cpp_init, unity hook installed after il2cpp_init
+  // il2cpp_init hook to call load on early mods
+  modloader_libil2cpp_handle = dlopen(libil2cppPath.c_str(), RTLD_LOCAL | RTLD_LAZY);
+  // On startup, we also want to protect everything, and ensure we have read/write
+  modloader::protect();
+  if (modloader_libil2cpp_handle == nullptr) {
+    LOG_ERROR(
+        "Could not dlopen libil2cpp.so: %s: %s! Not calling load on early mods or installing unity hooks for late "
+        "mods!",
+        libil2cppPath.c_str(), dlerror());
+    return;
+  }
+  void* il2cpp_init = dlsym(modloader_libil2cpp_handle, "il2cpp_init");
+  modloader_unity_handle = unityHandle;
+  // TODO: Add hooks here
+  (void)il2cpp_init;
+}
+
+MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {
+  // dlclose all opened mods, uninstall all hooks
+  //   modloader::close<LoadPhase::Mods>(files_dir);
+  //   modloader::close<LoadPhase::EarlyMods>(files_dir);
+  //   modloader::close<LoadPhase::Libs>(files_dir);
+}
 
 #endif

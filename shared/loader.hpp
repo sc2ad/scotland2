@@ -1,89 +1,149 @@
 #pragma once
+#include "_config.h"
 
+#include <array>
 #include <deque>
 #include <filesystem>
 #include <optional>
 #include <span>
 #include <stack>
+#include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "constexpr-map.hpp"
+
 namespace modloader {
 
 struct Dependency;
+struct SharedObject;
 
 enum struct LoadPhase {
-    Mods = 0,
-    EarlyMods = 1,
-    Libs = 2,
+  None,
+  Libs,
+  EarlyMods,
+  Mods,
 };
 
-using ModLoaderString = const char*;
+using namespace std::literals::string_view_literals;
+constexpr static ConstexprMap loadPhaseMap(std::array<std::pair<LoadPhase, std::string_view>, 3>{
+    { { LoadPhase::Libs, "libs"sv }, { LoadPhase::EarlyMods, "early_mods"sv }, { LoadPhase::Mods, "mods"sv } } });
 
-using MissingDependency = ModLoaderString;
+using ModloaderString = char const*;
+
+using MissingDependency = SharedObject;
 using DependencyResult = std::variant<MissingDependency, Dependency>;
 
 struct ModInfo;
 
-using SetupFunc = void (*)(ModInfo& modInfo);
-using LoadFunc = void (*)();
+using SetupFunc = void (*)(ModInfo& modInfo) noexcept;
+using LoadFunc = void (*)() noexcept;
+using UnloadFunc = void (*)() noexcept;
 
 struct SharedObject {
-    std::filesystem::path path;
-    explicit SharedObject(std::filesystem::path path) : path(std::move(path)) {}
+  std::filesystem::path path;
+  explicit SharedObject(std::filesystem::path path) : path(std::move(path)) {}
+  // Copies are explicit ONLY. Should move otherwise.
+  explicit SharedObject(SharedObject const&) = default;
+  SharedObject& operator=(SharedObject const&) = delete;
+  SharedObject(SharedObject&&) noexcept = default;
+  SharedObject& operator=(SharedObject&&) noexcept = default;
 
-    [[nodiscard]] std::vector<DependencyResult> getToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase,
-                                                          std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const;
+  /// @brief Returns a collection of dependency results for all of the dependencies of a SharedObject, as read from
+  /// the ELF. Requires that the SharedObject is readable.
+  /// @param dependencyDir The top level directory to load from
+  /// @param phase The phase to start the reverse search from
+  /// @param loadedDependencies The dependecies that we have loaded already. The string_views must remain in lifetime
+  /// for the duration of this call.
+  /// @return The collection of dependency results that were attempted to be resolved
+  [[nodiscard]] MODLOADER_EXPORT std::vector<DependencyResult> getToLoad(
+      std::filesystem::path const& dependencyDir, LoadPhase phase,
+      std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const;
 
-    [[nodiscard]] inline std::vector<DependencyResult> getToLoad(const std::filesystem::path& dependencyDir, LoadPhase phase) const {
-        std::unordered_map<std::string_view, std::vector<DependencyResult>> loadedDependencies;
-        return getToLoad(dependencyDir, phase, loadedDependencies);
-    }
+  [[nodiscard]] inline std::vector<DependencyResult> getToLoad(std::filesystem::path const& dependencyDir,
+                                                               LoadPhase phase) const {
+    std::unordered_map<std::string_view, std::vector<DependencyResult>> loadedDependencies{};
+    return getToLoad(dependencyDir, phase, loadedDependencies);
+  }
 };
 
 struct Dependency {
-    SharedObject object;
-    std::vector<DependencyResult> dependencies;
+  SharedObject object;
+  std::vector<DependencyResult> dependencies;
 
-    Dependency(SharedObject object, std::vector<DependencyResult> dependencies) : object(std::move(object)), dependencies(std::move(dependencies)) {}
+  Dependency(Dependency&&) noexcept = default;
+  Dependency& operator=(Dependency&&) noexcept = default;
+  // Copies are explicit ONLY. Should move otherwise.
+  explicit Dependency(Dependency const&) = default;
+  Dependency& operator=(Dependency const&) = delete;
+
+  Dependency(SharedObject object, std::vector<DependencyResult> dependencies)
+      : object(std::move(object)), dependencies(std::move(dependencies)) {}
 };
 
 struct ModInfo {
-    ModLoaderString version{};  // nullable
-    size_t versionLong{};
-    ModLoaderString name{};  // nullable
+  ModloaderString name{};     // nullable
+  ModloaderString version{};  // nullable
+  size_t versionLong{};
 
-    ModInfo(ModLoaderString version, size_t versionLong, ModLoaderString name) : version(version), versionLong(versionLong), name(name) {}
-    // TODO: Remove and force versionLong to be provided?
-    ModInfo(ModLoaderString version, ModLoaderString name) : version(version), versionLong(1), name(name) {}
+  ModInfo(ModloaderString name, ModloaderString version, size_t versionLong)
+      : name(name), version(version), versionLong(versionLong) {}
+  // TODO: Remove and force versionLong to be provided?
+  ModInfo(ModloaderString name, ModloaderString version) : name(name), version(version), versionLong(1) {}
 };
 
 struct FailedMod {
-    SharedObject object;
-    ModLoaderString failure;
-    std::vector<DependencyResult> dependencies;
+  SharedObject object;
+  std::string failure;
+  std::vector<DependencyResult> dependencies;
 
-    FailedMod(SharedObject object, ModLoaderString failure, std::vector<DependencyResult> dependencies)
-        : object(std::move(object)), failure(std::move(failure)), dependencies(std::move(dependencies)) {}
+  FailedMod(FailedMod&&) noexcept = default;
+  FailedMod& operator=(FailedMod&&) noexcept = default;
+  FailedMod(FailedMod const&) = delete;
+  FailedMod& operator=(FailedMod const&) = delete;
+
+  FailedMod(SharedObject object, std::string failure, std::vector<DependencyResult> dependencies)
+      : object(std::move(object)), failure(std::move(failure)), dependencies(std::move(dependencies)) {}
 };
 
 struct LoadedMod {
-    ModInfo const modInfo;
-    SharedObject const object;
-    //    std::vector<MissingDependency> missingDependencies;
+  ModInfo modInfo;
+  SharedObject object;
+  LoadPhase phase;
 
-    std::optional<SetupFunc> const setupFn;
-    std::optional<LoadFunc> const loadFn;
+  std::optional<SetupFunc> setupFn;
+  std::optional<LoadFunc> loadFn;
+  std::optional<UnloadFunc> unloadFn;
 
-    void* const handle;
+  void* handle;
 
-    LoadedMod(ModInfo modInfo, SharedObject object, std::optional<SetupFunc> setupFn, std::optional<LoadFunc> loadFn, void* handle)
-        : modInfo(std::move(modInfo)), object(std::move(object)), setupFn(setupFn), loadFn(loadFn), handle(handle) {}
+  LoadedMod(LoadedMod&&) noexcept = default;
+  LoadedMod& operator=(LoadedMod&&) noexcept = default;
+  LoadedMod(LoadedMod const&) = delete;
+  LoadedMod& operator=(LoadedMod const&) = delete;
+
+  LoadedMod(ModInfo modInfo, SharedObject object, LoadPhase phase, std::optional<SetupFunc> setupFn,
+            std::optional<LoadFunc> loadFn, std::optional<UnloadFunc> unloadFn, void* handle)
+      : modInfo(std::move(modInfo)),
+        object(std::move(object)),
+        phase(phase),
+        setupFn(setupFn),
+        loadFn(loadFn),
+        unloadFn(unloadFn),
+        handle(handle) {}
+
+  inline void init() noexcept {
+    if (setupFn) {
+      // NOLINTNEXTLINE: This const_cast is to allow for mods to write to this location, even if otherwise prohibited.
+      (*setupFn)(modInfo);
+    }
+  }
 };
 
-std::deque<Dependency> topologicalSort(std::span<DependencyResult const> list);
-std::deque<Dependency> topologicalSort(std::span<Dependency const> list);
+std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<DependencyResult const> list);
+std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<Dependency> list);
 }  // namespace modloader
