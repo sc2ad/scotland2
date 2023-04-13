@@ -13,6 +13,9 @@ Checks: "clang-diagnostic-*,
     -cppcoreguidelines-avoid-non-const-global-variables,
     -llvm-header-guard,
     -cppcoreguidelines-macro-usage,
+    -cppcoreguidelines-pro-type-vararg,
+    -hicpp-vararg,
+    -concurrency-mt-unsafe,
     -abseil-*"
 WarningsAsErrors: ""
 HeaderFilterRegex: ""
