@@ -60,7 +60,7 @@ struct SharedObject {
   /// @param loadedDependencies The dependecies that we have loaded already. The string_views must remain in lifetime
   /// for the duration of this call.
   /// @return The collection of dependency results that were attempted to be resolved
-  [[nodiscard]] MODLOADER_EXPORT std::vector<DependencyResult> getToLoad(
+  [[nodiscard]] std::vector<DependencyResult> getToLoad(
       std::filesystem::path const& dependencyDir, LoadPhase phase,
       std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const;
 
@@ -136,12 +136,18 @@ struct LoadedMod {
         unloadFn(unloadFn),
         handle(handle) {}
 
-  inline void init() noexcept {
+  /// @brief Calls the setup function on the mod
+  /// @return true if the call exists and was called, false otherwise
+  inline bool init() noexcept {
     if (setupFn) {
-      // NOLINTNEXTLINE: This const_cast is to allow for mods to write to this location, even if otherwise prohibited.
       (*setupFn)(modInfo);
+      return true;
     }
+    return false;
   }
+  /// @brief Closes the loaded mod by dlclosing it
+  /// @return An optional holding the error message, or nullopt on success
+  [[nodiscard]] std::optional<std::string> close() const noexcept;
 };
 
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<DependencyResult const> list);

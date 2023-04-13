@@ -18,6 +18,7 @@ MODLOADER_EXPORT std::string const& get_application_id() noexcept;
 
 #endif
 
+MODLOADER_FUNC bool modloader_get_failed();
 MODLOADER_EXPORT extern JavaVM* modloader_jvm;
 MODLOADER_EXPORT extern void* modloader_libil2cpp_handle;
 MODLOADER_EXPORT extern void* modloader_unity_handle;

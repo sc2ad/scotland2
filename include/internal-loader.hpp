@@ -16,15 +16,26 @@ namespace modloader {
 using LoadResult = std::variant<std::monostate, FailedMod, LoadedMod>;
 static_assert(std::is_move_assignable_v<LoadResult> && std::is_move_constructible_v<LoadResult>, "");
 
-std::vector<SharedObject> MODLOADER_EXPORT listAllObjectsInPhase(std::filesystem::path const& dependencyDir,
-                                                                 LoadPhase phase);
+std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase);
 
-/// List of failed mods to load
 // Moves FROM mods
-std::vector<LoadResult> MODLOADER_EXPORT loadMods(std::span<SharedObject> mods,
-                                                  std::filesystem::path const& dependencyDir,
-                                                  std::unordered_set<std::string>& skipLoad, LoadPhase phase);
-std::vector<LoadResult> MODLOADER_EXPORT loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
-                                                 std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+[[nodiscard]] std::vector<LoadResult> loadMods(std::span<SharedObject> mods, std::filesystem::path const& dependencyDir,
+                                               std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+[[nodiscard]] std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
+                                              std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+
+/// @brief Copies all of the files to be loaded by the modloader to a location that it can mark as executable.
+/// Does NOT use symlinks to avoid tainting permissions.
+/// @param filesDir The destination folder to copy to
+/// @return true on success, false otherwise
+[[nodiscard]] bool copy_all(std::filesystem::path const& filesDir) noexcept;
+
+/// @brief Opens the libraries from the @ref loadPhaseMap and places them in the filesDir provided.
+/// @param filesDir The destination to copy the libraries to in order to ensure correct permissions.
+void open_libs(std::filesystem::path const& filesDir) noexcept;
+
+void open_early_mods(std::filesystem::path const& filesDir) noexcept;
+
+void close_all() noexcept;
 
 }  // namespace modloader
