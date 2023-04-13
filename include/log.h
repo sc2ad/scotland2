@@ -18,6 +18,7 @@
 #define LOG_INFO(...) LOGA(ANDROID_LOG_INFO, __VA_ARGS__)
 #define LOG_WARN(...) LOGA(ANDROID_LOG_WARN, __VA_ARGS__)
 #define LOG_ERROR(...) LOGA(ANDROID_LOG_ERROR, __VA_ARGS__)
+#define LOG_FATAL(...) LOGA(ANDROID_LOG_FATAL, __VA_ARGS__)
 #else
 
 #include <cstdio>
@@ -31,5 +32,6 @@
 #define LOG_INFO(...) LOGA("INFO", __VA_ARGS__)
 #define LOG_WARN(...) LOGA("WARN", __VA_ARGS__)
 #define LOG_ERROR(...) LOGA("ERROR", __VA_ARGS__)
+#define LOG_FATAL(...) LOGA("FATAL", __VA_ARGS__)
 
 #endif
