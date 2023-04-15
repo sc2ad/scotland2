@@ -27,7 +27,7 @@ std::unordered_set<std::string> skip_load{};
 namespace modloader {
 
 bool copy_all(std::filesystem::path const& filesDir) noexcept {
-  auto const& base_path = get_modloader_path();
+  auto const base_path = get_modloader_path().parent_path();
   std::error_code error_code;
   for (auto const& [phase, path] : loadPhaseMap.arr) {
     auto dst = filesDir / path;
