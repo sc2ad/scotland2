@@ -35,6 +35,7 @@
 !.vscode/c_cpp_properties.json
 !.vscode/tasks.json
 .vscode/settings.json
+.cache/
 
 # NDK stuff
 out/
@@ -53,7 +54,6 @@ ndkpath.txt
 libs/
 obj/
 extern/
-qpm.shared.json
 *.backup
 extern.cmake
 qpm_defines.cmake

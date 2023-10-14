@@ -10,6 +10,17 @@
       "overrideSoName": "libsl2.so"
     }
   },
-  "dependencies": [],
-  "additionalData": {}
+  "dependencies": [
+    {
+      "id": "fmt",
+      "versionRange": "^10.0.0",
+      "additionalData": {}
+    },
+    {
+      "id": "capstone",
+      "versionRange": "^0.1.0",
+      "additionalData": {}
+    }
+  ],
+  "workspace": null
 }

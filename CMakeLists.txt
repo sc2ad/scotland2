@@ -33,10 +33,11 @@ set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # compile options used
-add_compile_options(-fPIE -flto -fPIC -fno-exceptions -fvisibility=hidden)
+add_compile_options(-fPIE -flto -fPIC -fno-exceptions -fno-rtti -fvisibility=hidden)
 add_compile_definitions(MOD_VERSION=\"${MOD_VERSION}\")
 add_compile_definitions(MOD_ID=\"${MOD_ID}\")
-add_compile_options(-Wall -Wextra -Werror -Wpedantic)
+add_compile_definitions(FLAMINGO_HEADER_ONLY)
+add_compile_options(-Wall -Wextra -Werror -Wpedantic -Wno-gnu-zero-variadic-macro-arguments)
 # add_link_options(-fuse-ld=lld)
 # compile definitions used
 

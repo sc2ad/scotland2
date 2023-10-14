@@ -1,0 +1,61 @@
+{
+  "config": {
+    "sharedDir": "shared",
+    "dependenciesDir": "extern",
+    "info": {
+      "name": "scotland2",
+      "id": "scotland2",
+      "version": "0.1.0",
+      "url": "https://github.com/sc2ad/scotland2",
+      "additionalData": {
+        "overrideSoName": "libsl2.so"
+      }
+    },
+    "dependencies": [
+      {
+        "id": "fmt",
+        "versionRange": "^10.0.0",
+        "additionalData": {}
+      },
+      {
+        "id": "capstone",
+        "versionRange": "^0.1.0",
+        "additionalData": {}
+      }
+    ],
+    "workspace": null
+  },
+  "restoredDependencies": [
+    {
+      "dependency": {
+        "id": "fmt",
+        "versionRange": "=10.0.0",
+        "additionalData": {
+          "headersOnly": true,
+          "branchName": "version/v10_0_0",
+          "compileOptions": {
+            "systemIncludes": [
+              "fmt/include/"
+            ],
+            "cppFlags": [
+              "-DFMT_HEADER_ONLY"
+            ]
+          }
+        }
+      },
+      "version": "10.0.0"
+    },
+    {
+      "dependency": {
+        "id": "capstone",
+        "versionRange": "=0.1.0",
+        "additionalData": {
+          "staticLinking": true,
+          "soLink": "https://github.com/sc2ad/capstone-qpm/releases/download/v0.1.0/libcapstone.a",
+          "overrideSoName": "libcapstone.a"
+        }
+      },
+      "version": "0.1.0"
+    }
+  ]
+}

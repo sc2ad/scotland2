@@ -1,5 +1,6 @@
 Checks: "clang-diagnostic-*,
     clang-analyzer-*,
+    fuchsia-statically-constructed-objects,
     *,
     -llvmlibc-callee-namespace,
     -readability-identifier-length,
@@ -14,10 +15,11 @@ Checks: "clang-diagnostic-*,
     -llvm-header-guard,
     -cppcoreguidelines-macro-usage,
     -cppcoreguidelines-pro-type-vararg,
+    -cppcoreguidelines-avoid-do-while,
     -hicpp-vararg,
     -concurrency-mt-unsafe,
     -abseil-*"
-WarningsAsErrors: ""
+WarningsAsErrors: true
 HeaderFilterRegex: ""
 AnalyzeTemporaryDtors: false
 FormatStyle: file
