@@ -96,8 +96,27 @@ MODLOADER_EXPORT std::filesystem::path const& get_modloader_source_path() noexce
 
 }  // namespace modloader
 
+// Exposed C API
 MODLOADER_FUNC bool modloader_get_failed() {
   return failed;
+}
+MODLOADER_FUNC char const* modloader_get_path() {
+  return modloader_path.c_str();
+}
+MODLOADER_FUNC char const* modloader_get_root_load_path() {
+  return modloader_root_load_path.c_str();
+}
+MODLOADER_FUNC char const* modloader_get_files_dir() {
+  return files_dir.c_str();
+}
+MODLOADER_FUNC char const* modloader_get_external_dir() {
+  return external_dir.c_str();
+}
+MODLOADER_FUNC char const* modloader_get_application_id() {
+  return application_id.c_str();
+}
+MODLOADER_FUNC char const* modloader_get_source_path() {
+  return modloader_source_path.c_str();
 }
 
 MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const* modloaderPath,

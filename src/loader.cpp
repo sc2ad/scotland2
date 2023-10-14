@@ -2,6 +2,7 @@
 #include "constexpr-map.hpp"
 #include "internal-loader.hpp"
 #include "log.h"
+#include "modloader.h"
 
 #include <dlfcn.h>
 #include <elf.h>
@@ -140,7 +141,9 @@ std::vector<DependencyResult> SharedObject::getToLoad(
       // Get the dynamic symbol for this entry
       auto const& dyn = readAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset + sizeof(Elf64_Dyn) * dynamic_count++);
       if (dyn.d_tag == DT_NULL) {
-        LOG_DEBUG("End of dynamic section. Counted a total of: {} dynamic entries, of which {} were needed dependencies", dynamic_count, needed_offsets.size());
+        LOG_DEBUG(
+            "End of dynamic section. Counted a total of: {} dynamic entries, of which {} were needed dependencies",
+            dynamic_count, needed_offsets.size());
         break;
       } else if (dyn.d_tag == DT_NEEDED) {
         LOG_DEBUG("Found DT_NEEDED entry: {} with string table offset: {}", dynamic_count - 1, dyn.d_un.d_val);
@@ -211,7 +214,7 @@ std::optional<std::string> LoadedMod::close() const noexcept {
     (*unloadFn)();
   }
   if (dlclose(handle) != 0) {
-    return dlerror();
+    return std::string(dlerror());
   }
   return {};
 }
@@ -419,7 +422,8 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
   auto result = openLibrary(mod.path);
   skipLoad.emplace(mod.path);
 
-  LOG_DEBUG("Loaded mod from path: {} with: {} (1 indicates failure that will be logged later)", mod.path.c_str(), result.index());
+  LOG_DEBUG("Loaded mod from path: {} with: {} (1 indicates failure that will be logged later)", mod.path.c_str(),
+            result.index());
   results.emplace_back(handleResult(std::move(result), std::move(mod), std::move(deps)));
   return results;
 }

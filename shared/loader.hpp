@@ -17,6 +17,7 @@
 
 #include <fmt/core.h>
 #include "constexpr-map.hpp"
+#include "modloader.h"
 
 namespace modloader {
 
@@ -38,14 +39,12 @@ using namespace std::literals::string_view_literals;
 constexpr static ConstexprMap loadPhaseMap(std::array<std::pair<LoadPhase, std::string_view>, 3>{
     { { LoadPhase::Libs, "libs"sv }, { LoadPhase::EarlyMods, "early_mods"sv }, { LoadPhase::Mods, "mods"sv } } });
 
-using ModloaderString = char const*;
-
 using MissingDependency = SharedObject;
 using DependencyResult = std::variant<MissingDependency, Dependency>;
 
 struct ModInfo;
 
-using SetupFunc = void (*)(ModInfo& modInfo) noexcept;
+using SetupFunc = void (*)(CModInfo* modInfo) noexcept;
 using LoadFunc = void (*)() noexcept;
 using UnloadFunc = void (*)() noexcept;
 
@@ -90,15 +89,54 @@ struct Dependency {
       : object(std::move(object)), dependencies(std::move(dependencies)) {}
 };
 
+enum struct MatchType {
+  kStrict,
+  kIdOnly,
+  kIdVersion,
+  kIdVersionLong,
+  kUnknown,
+};
+inline MatchType from_c_match_type(CMatchType type) {
+  switch (type) {
+    case MatchType_Strict:
+      return MatchType::kStrict;
+    case MatchType_IdOnly:
+      return MatchType::kIdOnly;
+    case MatchType_IdVersion:
+      return MatchType::kIdVersion;
+    case MatchType_IdVersionLong:
+      return MatchType::kIdVersionLong;
+    default:
+      return MatchType::kUnknown;
+  }
+}
 struct ModInfo {
-  ModloaderString name{};     // nullable
-  ModloaderString version{};  // nullable
+  std::string id{};       // nullable
+  std::string version{};  // nullable
   size_t versionLong{};
 
-  ModInfo(ModloaderString name, ModloaderString version, size_t versionLong)
-      : name(name), version(version), versionLong(versionLong) {}
-  // TODO: Remove and force versionLong to be provided?
-  ModInfo(ModloaderString name, ModloaderString version) : name(name), version(version), versionLong(1) {}
+  ModInfo(std::string_view id, std::string_view version, size_t versionLong)
+      : id(id), version(version), versionLong(versionLong) {}
+
+  [[nodiscard]] bool equals(ModInfo const& other, MatchType type) const {
+    switch (type) {
+      case MatchType::kIdOnly:
+        return std::string(id) == other.id;
+      case MatchType::kIdVersion:
+        return std::string(id) == other.id && std::string(version) == other.version;
+      case MatchType::kIdVersionLong:
+        return std::string(id) == other.id && versionLong == other.versionLong;
+      case MatchType::kStrict:
+      // Unknown case behaves as strict
+      case MatchType::kUnknown:
+        return std::string(id) == other.id && std::string(version) == other.version && versionLong == other.versionLong;
+    }
+  }
+  void assign(CModInfo const& other) {
+    id = other.id;
+    version = other.version;
+    versionLong = other.version_long;
+  }
 };
 
 struct FailedMod {
@@ -145,7 +183,15 @@ struct LoadedMod {
   /// @return true if the call exists and was called, false otherwise
   inline bool init() noexcept {
     if (setupFn) {
-      (*setupFn)(modInfo);
+      // Need to make a CModInfo here to ensure ABI correctness
+      CModInfo info{
+        .id = modInfo.id.c_str(),
+        .version = modInfo.version.c_str(),
+        .version_long = modInfo.versionLong,
+      };
+      (*setupFn)(&info);
+      // After the call, take the info and write it back
+      modInfo.assign(info);
       return true;
     }
     return false;
@@ -175,4 +221,25 @@ struct LoadedMod {
 
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<DependencyResult const> list);
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::vector<Dependency>&& list);
+
+/// @brief Triggers an unload of the specified mod, which will in turn call the unload() method of it.
+/// It will also be removed from any collections. It is UB if the mod to be unloaded is the currently executing mod.
+/// @return False if the mod failed to be unloaded in any way, true if it either did not exist or was successfully
+/// unloaded.
+MODLOADER_EXPORT bool force_unload(ModInfo info, MatchType type) noexcept;
+
 }  // namespace modloader
+
+// Format specializations
+template <>
+struct fmt::formatter<modloader::ModInfo> {
+  template <typename ParseContext>
+  constexpr auto parse(ParseContext& ctx) {
+    return ctx.begin();
+  }
+
+  template <typename FormatContext>
+  auto format(modloader::ModInfo const& info, FormatContext& ctx) {
+    return fmt::format_to(ctx.out(), "id: {} version: {} version tag: {}", info.id, info.version, info.versionLong);
+  }
+};

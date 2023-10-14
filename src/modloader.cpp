@@ -1,5 +1,6 @@
+#include <algorithm>
+#include <variant>
 #ifndef LINUX_TEST
-#include "modloader.h"
 #include <jni.h>
 #include <sys/stat.h>
 #include <filesystem>
@@ -8,6 +9,7 @@
 #include "internal-loader.hpp"
 #include "loader.hpp"
 #include "log.h"
+#include "modloader.h"
 
 MODLOADER_EXPORT JavaVM* modloader_jvm;
 MODLOADER_EXPORT void* modloader_libil2cpp_handle;
@@ -201,7 +203,63 @@ void close_all() noexcept {
   std::for_each(loaded_mods.begin(), loaded_mods.end(), try_close);
   std::for_each(loaded_early_mods.begin(), loaded_early_mods.end(), try_close);
   std::for_each(loaded_libs.begin(), loaded_libs.end(), try_close);
+  loaded_libs.clear();
+  loaded_early_mods.clear();
+  loaded_mods.clear();
 }
+
+bool force_unload(ModInfo info, MatchType match_type) noexcept {
+  LOG_DEBUG("Attempting to force unload: {}", info);
+  // First, see if we have a mod that matches
+  auto find_match = [&info, match_type](LoadResult const& r) -> bool {
+    if (auto const* loaded = std::get_if<LoadedMod>(&r)) {
+      if (loaded->modInfo.equals(info, match_type)) {
+        // Found a match!
+        LOG_DEBUG("Found matching mod info: {} at: {}", loaded->modInfo, loaded->object.path.c_str());
+        return true;
+      }
+    }
+    return false;
+  };
+  // Then, try to unload it
+  // Make a wrapper enum to hold some concepts here
+  enum struct UnloadResult {
+    kNotFound,
+    kFailed,
+    kSuccess,
+  };
+  constexpr static auto try_unload = [](std::vector<LoadResult>& results, auto const& find_match) -> UnloadResult {
+    auto found = std::find_if(results.begin(), results.end(), find_match);
+    if (found == results.end()) {
+      return UnloadResult::kNotFound;
+    }
+    if (auto* loaded = std::get_if<LoadedMod>(&*found)) {
+      if (auto err = loaded->close()) {
+        LOG_WARN("Failed to close mod: {}: {}", loaded->object.path.c_str(), err->c_str());
+        return UnloadResult::kFailed;
+      }
+    }
+    // Remove match from the collection
+    results.erase(found);
+    return UnloadResult::kSuccess;
+  };
+  // Now search the lists.
+  // Start with the "best" matches first, ex: mods, then try early_mods
+  // libs will never have ANY info
+  auto result = try_unload(loaded_mods, find_match);
+  if (result == UnloadResult::kNotFound) {
+    result = try_unload(loaded_early_mods, find_match);
+  }
+  return result == UnloadResult::kSuccess;
+}
+
 }  // namespace modloader
+
+// C API loader related interop
+MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type) {
+  return modloader::force_unload(modloader::ModInfo(info.id != nullptr ? info.id : "",
+                                                    info.version != nullptr ? info.version : "", info.version_long),
+                                 modloader::from_c_match_type(match_type));
+}
 
 #endif
