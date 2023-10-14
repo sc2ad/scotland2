@@ -150,11 +150,29 @@ struct LoadedMod {
     }
     return false;
   }
+  /// @brief Calls the load function on the mod
+  /// @return true if the call exists and was called, false otherwise
+  inline bool load() noexcept {
+    if (loadFn) {
+      (*loadFn)();
+      return true;
+    }
+    return false;
+  }
+  /// @brief Calls the unload function on the mod
+  /// @return true if the call exists and was called, false otherwise
+  inline bool unload() noexcept {
+    if (unloadFn) {
+      (*unloadFn)();
+      return true;
+    }
+    return false;
+  }
   /// @brief Closes the loaded mod by dlclosing it
   /// @return An optional holding the error message, or nullopt on success
   [[nodiscard]] std::optional<std::string> close() const noexcept;
 };
 
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<DependencyResult const> list);
-std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<Dependency> list);
+std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::vector<Dependency>&& list);
 }  // namespace modloader

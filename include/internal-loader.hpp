@@ -36,6 +36,8 @@ void open_libs(std::filesystem::path const& filesDir) noexcept;
 
 void open_early_mods(std::filesystem::path const& filesDir) noexcept;
 
+void load_mods() noexcept;
+
 void close_all() noexcept;
 
 }  // namespace modloader

@@ -247,15 +247,14 @@ std::deque<Dependency> topologicalSort(std::span<DependencyResult const> list) {
     deps.push_back(*dep);
   }
 
-  return topologicalSort(deps);
+  return topologicalSort(std::move(deps));
 }
 
 // Moves FROM list
-std::deque<Dependency> topologicalSort(std::span<Dependency> list) {
+std::deque<Dependency> topologicalSort(std::vector<Dependency>&& deps) {
   std::deque<Dependency> dependencies{};
   std::unordered_set<std::string_view> visited{};
 
-  std::vector<Dependency> deps(list.begin(), list.end());
   sortDependencies(deps);
 
   for (Dependency& dep : deps) {
