@@ -32,20 +32,12 @@ T& readAtOffset(std::span<uint8_t> f, uint64_t offset) noexcept {
   return *reinterpret_cast<T*>(&f[offset]);
 }
 
-std::string_view readAtOffset(std::span<uint8_t> const f, uint64_t offset) noexcept {
-  return { readAtOffset<char const*>(f, offset) };
-}
-
 template <typename T>
 std::span<T> readManyAtOffset(std::span<uint8_t> f, uint64_t offset, size_t amount, size_t size) noexcept {
-  T* begin = &readAtOffset<T>(f, offset);
-  T* end = begin + (amount * size);
-  return std::span<T>(begin, end);
+  uint8_t* begin = &readAtOffset<uint8_t>(f, offset);
+  uint8_t* end = begin + (amount * size);
+  return std::span<T>(reinterpret_cast<T*>(begin), reinterpret_cast<T*>(end));
 }
-
-Elf64_Shdr& getSectionHeader(std::span<uint8_t> f, Elf64_Ehdr const& elf, uint16_t s) noexcept {
-  return readAtOffset<Elf64_Shdr>(f, elf.e_shoff + static_cast<uint64_t>(elf.e_shentsize * s));
-};
 
 }  // namespace
 namespace modloader {
@@ -64,13 +56,15 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
       continue;
     }
     auto path_to_check = dependencyDir / it.second / name;
+    LOG_DEBUG("Searching for dependency: {} at: {}", name.c_str(), path_to_check.c_str());
     if (std::filesystem::exists(path_to_check, error_code)) {
       // Dependency exists at this phase.
+      // TODO: This should actually check to ensure that this file is actually readable, not just exists
       return { std::make_pair(SharedObject(path_to_check), it.first) };
     }
     if (error_code) {
-      LOG_ERROR("Failed to check for existence of: %s: %s", path_to_check.c_str(), error_code.message().c_str());
-      return {};
+      LOG_ERROR("Failed to check for existence of: {}: {}", path_to_check.c_str(), error_code.message().c_str());
+      return std::nullopt;
     }
     // Otherwise, this filename doesn't exist under this phase. Try the next one.
   }
@@ -83,72 +77,110 @@ std::vector<DependencyResult> SharedObject::getToLoad(
     std::filesystem::path const& dependencyDir, LoadPhase phase,
     std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const {
   auto depIt = loadedDependencies.find(path.c_str());
+  LOG_DEBUG("Getting dependencies for: {} under root: {} for phase: {}", path.c_str(), dependencyDir.c_str(), phase);
 
   if (depIt != loadedDependencies.end()) {
+    LOG_DEBUG("Hit in dependencies cache, have {} loaded dependencies", depIt->second.size());
     return depIt->second;
   }
 
+  // TODO: RAII-ify this
   int fd = open64(path.c_str(), O_RDONLY | O_CLOEXEC);
   if (fd == -1) {
-    LOG_ERROR("Failed to open dependency: %s: %s", path.c_str(), std::strerror(errno));
+    LOG_ERROR("Failed to open dependency: {}: {}", path.c_str(), std::strerror(errno));
     return {};
   }
 
   struct stat64 st {};
   if (fstat64(fd, &st) != 0) {
-    LOG_ERROR("Failed to stat dependency: %s: %s", path.c_str(), std::strerror(errno));
+    LOG_ERROR("Failed to stat dependency: {}: {}", path.c_str(), std::strerror(errno));
     return {};
   }
   size_t size = st.st_size;
 
+  LOG_DEBUG("mmapping with size: {} on fd: {}", size, fd);
+  // TODO: RAII-ify this
   void* mapped = mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
 
   if (mapped == MAP_FAILED) {
-    LOG_ERROR("Failed to mmap dependency: %s: %s", path.c_str(), std::strerror(errno));
+    LOG_ERROR("Failed to mmap dependency: {}: {}", path.c_str(), std::strerror(errno));
   }
 
   std::span<uint8_t> f(static_cast<uint8_t*>(mapped), static_cast<uint8_t*>(mapped) + size);
 
   auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
+  LOG_DEBUG("Header read: ehsize: {}, type: {}, version: {}, shentsize: {}", elf.e_ehsize, elf.e_type, elf.e_version,
+            elf.e_shentsize);
 
+  // Using the c_str here is OK because the lifetime of the path is tied to this instance
   std::vector<DependencyResult>& dependencies =
       loadedDependencies.emplace(path.c_str(), std::vector<DependencyResult>{}).first->second;
   // Micro-optimization: Small dependency sets will not alloc, larger ones will alloc less frequently
-  dependencies.reserve(16);
+  constexpr static auto kGuessDependencyCount = 16;
+  dependencies.reserve(kGuessDependencyCount);
 
-  for (size_t s = 0; s < elf.e_shnum; s++) {
-    auto const& sectionHeader = getSectionHeader(f, elf, s);
+  auto sections = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
+
+  for (auto const& sectionHeader : sections) {
+    LOG_DEBUG("section header type: {}", sectionHeader.sh_type);
     if (sectionHeader.sh_type != SHT_DYNAMIC) {
       continue;
     }
-
-    size_t num_deps = (sectionHeader.sh_entsize > 0) ? sectionHeader.sh_size / sectionHeader.sh_entsize : 0;
-
-    for (size_t d = 0; d < num_deps; d++) {
-      auto const& dyn = readAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset + (sectionHeader.sh_entsize * d));
-      if (dyn.d_tag != DT_NEEDED) {
-        LOG_DEBUG("Skipping non-required dynamic tag for section: %zu dependency: %zu", s, d);
-        continue;
+    // sectionHeader is the dynamic symbols table
+    // We must walk until we see a NULL symbol
+    // We want to grab the STRTAB entry from here and use it
+    // The number of entries we have seen, mostly for debugging
+    int dynamic_count = 0;
+    // This vector holds the actual string table offsets for the DT_NEEDED entries
+    std::vector<uint64_t> needed_offsets{};
+    // The strtab offset to use for name resolution
+    uint64_t strtab_offset = 0;
+    needed_offsets.reserve(kGuessDependencyCount);
+    while (true) {
+      // Get the dynamic symbol for this entry
+      auto const& dyn = readAtOffset<Elf64_Dyn>(f, sectionHeader.sh_offset + sizeof(Elf64_Dyn) * dynamic_count++);
+      if (dyn.d_tag == DT_NULL) {
+        LOG_DEBUG("End of dynamic section. Counted a total of: {} dynamic entries, of which {} were needed dependencies", dynamic_count, needed_offsets.size());
+        break;
+      } else if (dyn.d_tag == DT_NEEDED) {
+        LOG_DEBUG("Found DT_NEEDED entry: {} with string table offset: {}", dynamic_count - 1, dyn.d_un.d_val);
+        needed_offsets.push_back(dyn.d_un.d_val);
+      } else if (dyn.d_tag == DT_STRTAB) {
+        strtab_offset = dyn.d_un.d_ptr;
       }
-
+    }
+    if (strtab_offset == 0) {
+      // We failed to read a DT_STRTAB entry from the dynamic section!
+      LOG_DEBUG("Failed to find pointer to strtab! No DT_STRTAB section in: {}", path.c_str());
+      if (munmap(mapped, size) != 0) {
+        LOG_ERROR("Failed to munmap {}: {}", path.c_str(), std::strerror(errno));
+      }
+      if (close(fd) != 0) {
+        LOG_ERROR("Failed to close fd for: {}: {}", path.c_str(), std::strerror(errno));
+      }
+      return dependencies;
+    }
+    for (auto needed_offset : needed_offsets) {
+      LOG_DEBUG("DT_NEEDED: str offset: {}", needed_offset);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
-      std::string_view name =
-          readAtOffset(f, getSectionHeader(f, elf, sectionHeader.sh_link).sh_offset + dyn.d_un.d_val);
+      std::string_view name = &readAtOffset<char const>(f, strtab_offset + needed_offset);
 
       if (name.empty()) {
-        LOG_WARN("SH undefined offset link name is empty/null, for dynamic section: %zu dependency: %zu of: %s", s, d,
-                 path.c_str());
+        LOG_WARN("DT_NEEDED str is null! Bad ELF: {}, but continuing anyways...", path.c_str());
         continue;
       }
+      LOG_DEBUG("DT_NEEDED name: {}", name);
 
       auto optObj = findSharedObject(dependencyDir, phase, name);
 
       if (optObj) {
         auto [obj, openedPhase] = std::move(*optObj);
         if (openedPhase == LoadPhase::None) {
+          LOG_DEBUG("Unresolved dependency for: {}", obj.path.c_str());
           // Unresolved dependency
           dependencies.emplace_back(std::in_place_type_t<MissingDependency>{}, std::move(obj));
         } else {
+          LOG_DEBUG("Resolved dependency for: {}", obj.path.c_str());
           // Resolved dependency
           // TODO: Make this avoid potentially stack overflowing on extremely nested dependency trees
           auto loadList = obj.getToLoad(dependencyDir, openedPhase, loadedDependencies);
@@ -156,17 +188,20 @@ std::vector<DependencyResult> SharedObject::getToLoad(
         }
       } else {
         // Failed dependency (failed to check if it exists?)
-        LOG_WARN("Skipping FAILED dependency: %s", name.data());
+        LOG_WARN("Skipping FAILED dependency: {}", name.data());
       }
     }
+    // Because there is only one dynamic table, once we see it, we can just exit right away.
+    break;
   }
 
   if (munmap(mapped, size) != 0) {
-    LOG_ERROR("Failed to munmap %s: %s", path.c_str(), std::strerror(errno));
+    LOG_ERROR("Failed to munmap {}: {}", path.c_str(), std::strerror(errno));
   }
   if (close(fd) != 0) {
-    LOG_ERROR("Failed to close fd for: %s: %s", path.c_str(), std::strerror(errno));
+    LOG_ERROR("Failed to close fd for: {}: {}", path.c_str(), std::strerror(errno));
   }
+  LOG_DEBUG("Found a total of: {} dependencies successfully for: {}", dependencies.size(), path.c_str());
 
   return dependencies;
 }
@@ -271,13 +306,20 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
     if (ph == phase) {
       std::vector<SharedObject> objects{};
 
-      std::filesystem::directory_iterator dir_iter(dependencyDir / path, error_code);
+      auto dir = dependencyDir / path;
+      std::filesystem::directory_iterator dir_iter(dir, error_code);
       if (error_code) {
-        LOG_ERROR("Failed to find objects in phase: %d from: %s: %s", phase, dependencyDir.c_str(),
+        LOG_ERROR("Failed to find objects in phase: {} from: {}: {}", phase, dependencyDir.c_str(),
                   error_code.message().c_str());
         return {};
       }
       for (auto const& file : dir_iter) {
+        if (error_code) {
+          LOG_WARN("Failed to open file while iterating: {}", dir.c_str());
+          continue;
+        }
+        // TODO: Add statcheck here
+        LOG_DEBUG("Walking over file: {}", file.path().c_str());
         // All SharedObjects must be valid lib*.so files
         if (file.is_directory()) {
           continue;
@@ -289,6 +331,7 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
           continue;
         }
 
+        LOG_DEBUG("Adding to attempt load: {}", file.path().c_str());
         objects.emplace_back(file.path());
       }
 
@@ -302,10 +345,11 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
 using OpenLibraryResult = std::variant<void*, std::string>;
 
 OpenLibraryResult openLibrary(std::filesystem::path const& path) {
+  LOG_DEBUG("Attempting to dlopen: {}", path.c_str());
   auto* handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
   if (handle == nullptr) {
     // Error logging (for if symbols cannot be resolved)
-    return dlerror();
+    return std::string(dlerror());
   }
 
   return { handle };
@@ -321,12 +365,12 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
                                 std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
   if (skipLoad.contains(mod.path)) {
-    LOG_WARN("Already loaded object at path: %s", mod.path.c_str());
+    LOG_WARN("Already loaded object at path: {}", mod.path.c_str());
     return {};
   }
 
-  auto handleResult = [&](OpenLibraryResult&& result, SharedObject&& obj,
-                          std::vector<DependencyResult>&& dependencies) -> LoadResult {
+  auto handleResult = [phase](OpenLibraryResult&& result, SharedObject&& obj,
+                              std::vector<DependencyResult>&& dependencies) -> LoadResult {
     if (auto const* error = get_if<std::string>(&result)) {
       return FailedMod(std::move(obj), *error, std::move(dependencies));
     }
@@ -345,8 +389,10 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
   };
 
   auto deps = mod.getToLoad(dependencyDir, phase);
+  LOG_DEBUG("Fetched dependencies");
   // Sorted is a COPY of deps
   auto sorted = topologicalSort(static_cast<std::span<DependencyResult const>>(deps));
+  LOG_DEBUG("Sorted dependencies");
 
   std::vector<LoadResult> results{};
   results.reserve(sorted.size());
@@ -365,7 +411,7 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
     if (auto const* failed = get_if<FailedMod>(&handled)) {
       // If we fail to open a dependency of the mod we are trying to open, we continue anyways, hoping that we will be
       // able to open later
-      LOG_INFO("Failed to open dependency: %s for object: %s, %s! Trying anyways...", failed->object.path.c_str(),
+      LOG_INFO("Failed to open dependency: {} for object: {}, {}! Trying anyways...", failed->object.path.c_str(),
                mod.path.c_str(), failed->failure.c_str());
     }
   }
@@ -373,6 +419,7 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
   auto result = openLibrary(mod.path);
   skipLoad.emplace(mod.path);
 
+  LOG_DEBUG("Loaded mod from path: {} with: {} (1 indicates failure that will be logged later)", mod.path.c_str(), result.index());
   results.emplace_back(handleResult(std::move(result), std::move(mod), std::move(deps)));
   return results;
 }
@@ -388,7 +435,9 @@ std::vector<LoadResult> loadMods(std::span<SharedObject> mods, std::filesystem::
       continue;
     }
 
+    LOG_DEBUG("Attempting to load (moved) mod: {}", mod.path.c_str());
     auto otherResults = loadMod(std::move(mod), dependencyDir, skipLoad, phase);
+    LOG_DEBUG("After opening mod, now have: {} opened libraries", otherResults.size());
     std::move(otherResults.begin(), otherResults.end(), std::back_inserter(results));
   }
 

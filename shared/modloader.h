@@ -10,9 +10,11 @@
 namespace modloader {
 
 MODLOADER_EXPORT std::filesystem::path const& get_modloader_path() noexcept;
+MODLOADER_EXPORT std::filesystem::path const& get_modloader_root_load_path() noexcept;
 MODLOADER_EXPORT std::filesystem::path const& get_files_dir() noexcept;
 MODLOADER_EXPORT std::filesystem::path const& get_external_dir() noexcept;
 MODLOADER_EXPORT std::string const& get_application_id() noexcept;
+MODLOADER_EXPORT std::filesystem::path const& get_modloader_source_path() noexcept;
 
 }  // namespace modloader
 

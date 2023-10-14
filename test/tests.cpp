@@ -29,7 +29,7 @@ void logDependencies(std::span<modloader::DependencyResult const> dependencies, 
   for (auto const& result : dependencies) {
     std::string depName;
 
-    const auto* dep = get_if<modloader::Dependency>(&result);
+    auto const* dep = get_if<modloader::Dependency>(&result);
     if (dep != nullptr) {
       depName = dep->object.path.filename().string();
     } else {
@@ -43,20 +43,20 @@ void logDependencies(std::span<modloader::DependencyResult const> dependencies, 
   }
 }
 
-void tests::loadModsTest(const std::filesystem::path& path) {
+void tests::loadModsTest(std::filesystem::path const& path) {
   auto earlyMods = modloader::listAllObjectsInPhase(path, modloader::LoadPhase::EarlyMods);
   auto mods = modloader::listAllObjectsInPhase(path, modloader::LoadPhase::Mods);
 
   std::unordered_set<std::string> loadedPaths = {};
 
   write("Loading early mods");
-  modloader::loadMods(earlyMods, path, loadedPaths, modloader::LoadPhase::EarlyMods);
+  auto results = modloader::loadMods(earlyMods, path, loadedPaths, modloader::LoadPhase::EarlyMods);
 
   write("Test double load");
-  modloader::loadMods(earlyMods, path, loadedPaths, modloader::LoadPhase::EarlyMods);
+  static_cast<void>(modloader::loadMods(earlyMods, path, loadedPaths, modloader::LoadPhase::EarlyMods));
 
   write("Loading late mods");
-  modloader::loadMods(mods, path, loadedPaths, modloader::LoadPhase::Mods);
+  auto late_results = modloader::loadMods(mods, path, loadedPaths, modloader::LoadPhase::Mods);
 }
 // NOLINTNEXTLINE
 std::vector<modloader::DependencyResult> tests::getDependencyTreeTest(std::filesystem::path const& dependencyPath,
