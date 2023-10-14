@@ -15,6 +15,7 @@
 #include <variant>
 #include <vector>
 
+#include <fmt/core.h>
 #include "constexpr-map.hpp"
 
 namespace modloader {
@@ -28,6 +29,10 @@ enum struct LoadPhase {
   EarlyMods,
   Mods,
 };
+
+inline auto format_as(LoadPhase p) {
+  return fmt::underlying(p);
+}
 
 using namespace std::literals::string_view_literals;
 constexpr static ConstexprMap loadPhaseMap(std::array<std::pair<LoadPhase, std::string_view>, 3>{

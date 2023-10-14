@@ -36,13 +36,13 @@ bool copy_all(std::filesystem::path const& filesDir) noexcept {
                           std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing,
                           error_code);
     if (error_code) {
-      LOG_ERROR("Failed during phase: %d to copy directory: %s to: %s: %s", phase, src.c_str(), dst.c_str(),
+      LOG_ERROR("Failed during phase: {} to copy directory: {} to: {}: {}", phase, src.c_str(), dst.c_str(),
                 error_code.message().c_str());
       return false;
     }
     std::filesystem::permissions(dst, std::filesystem::perms::all, error_code);
     if (error_code) {
-      LOG_ERROR("Failed during phase: %d to set permissions on copied directory: %s: %s", phase, dst.c_str(),
+      LOG_ERROR("Failed during phase: {} to set permissions on copied directory: {}: {}", phase, dst.c_str(),
                 error_code.message().c_str());
       return false;
     }
@@ -52,13 +52,15 @@ bool copy_all(std::filesystem::path const& filesDir) noexcept {
 
 void open_libs(std::filesystem::path const& filesDir) noexcept {
   // Not thread safe: mutates skip_load
+  LOG_DEBUG("Opening libs using root: {}", filesDir.c_str());
   auto lib_sos = listAllObjectsInPhase(filesDir, LoadPhase::Libs);
+  LOG_DEBUG("Found: {} candidates! Attempting to load them...", lib_sos.size());
   // TODO: Libs are stored as LoadedMod which is redundant
   loaded_libs = loadMods(lib_sos, filesDir, skip_load, LoadPhase::Libs);
   // Report errors
   for (auto& l : loaded_libs) {
     if (auto* fail = std::get_if<FailedMod>(&l)) {
-      LOG_WARN("Skipping lib load of library: %s because it failed with: %s", fail->object.path.c_str(),
+      LOG_WARN("Skipping lib load of library: {} because it failed with: {}", fail->object.path.c_str(),
                fail->failure.c_str());
     }
   }
@@ -75,10 +77,10 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
       // Call init, note that it is a mutable call
       if (!loaded_mod->init()) {
         // Setup call does not exist, but the mod was still loaded
-        LOG_INFO("No setup on mod: %s", loaded_mod->object.path.c_str());
+        LOG_INFO("No setup on mod: {}", loaded_mod->object.path.c_str());
       }
     } else if (auto* fail = std::get_if<FailedMod>(&m)) {
-      LOG_WARN("Skipping setup call on: %s because it failed: %s", fail->object.path.c_str(), fail->failure.c_str());
+      LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
     }
   }
 }
@@ -93,7 +95,7 @@ void close_all() noexcept {
   constexpr auto try_close = [](LoadResult& r) {
     if (auto* loaded = std::get_if<LoadedMod>(&r)) {
       if (auto err = loaded->close()) {
-        LOG_WARN("Failed to close mod: %s: %s", loaded->object.path.c_str(), err->c_str());
+        LOG_WARN("Failed to close mod: {}: {}", loaded->object.path.c_str(), err->c_str());
       }
     }
   };
