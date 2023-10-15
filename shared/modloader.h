@@ -20,6 +20,7 @@ MODLOADER_EXPORT std::filesystem::path const& get_files_dir() noexcept;
 MODLOADER_EXPORT std::filesystem::path const& get_external_dir() noexcept;
 MODLOADER_EXPORT std::string const& get_application_id() noexcept;
 MODLOADER_EXPORT std::filesystem::path const& get_modloader_source_path() noexcept;
+MODLOADER_EXPORT std::filesystem::path const& get_libil2cpp_path() noexcept;
 
 }  // namespace modloader
 extern "C" {
@@ -66,10 +67,15 @@ MODLOADER_FUNC char const* modloader_get_application_id();
 /// @brief Returns the path where the modloader was found from
 /// Example output: /sdcard/ModData/com.beatgames.beatsaber/Modloader/libsl2.so
 MODLOADER_FUNC char const* modloader_get_source_path();
+/// @brief Returns the path where libil2cpp.so is located and dlopened from
+/// Example output:
+MODLOADER_FUNC char const* modloader_get_libil2cpp_path();
 /// @brief Triggers an unload of the specified mod, which will in turn call the unload() method of it.
 /// It will also be removed from any collections. It is UB if the mod to be unloaded is the currently executing mod.
 /// @return False if the mod failed to be unloaded in any way, true if it either did not exist or was successfully
 /// unloaded.
+// TODO: Make this not work for mods that have no unload method, instead returning a different response
+// TODO: Also make sure we travel up our dependents and unload all of them
 MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type);
 // TODO: Add requireMod
 // TODO: More docs on existing

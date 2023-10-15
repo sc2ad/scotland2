@@ -94,6 +94,10 @@ MODLOADER_EXPORT std::filesystem::path const& get_modloader_source_path() noexce
   return modloader_source_path;
 }
 
+MODLOADER_EXPORT std::filesystem::path const& get_libil2cpp_path() noexcept {
+  return libil2cppPath;
+}
+
 }  // namespace modloader
 
 // Exposed C API
@@ -117,6 +121,9 @@ MODLOADER_FUNC char const* modloader_get_application_id() {
 }
 MODLOADER_FUNC char const* modloader_get_source_path() {
   return modloader_source_path.c_str();
+}
+MODLOADER_FUNC char const* modloader_get_libil2cpp_path() {
+  return libil2cppPath.c_str();
 }
 
 MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const* modloaderPath,
