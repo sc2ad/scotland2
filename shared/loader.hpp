@@ -68,11 +68,8 @@ struct SharedObject {
       std::filesystem::path const& dependencyDir, LoadPhase phase,
       std::unordered_map<std::string_view, std::vector<DependencyResult>>& loadedDependencies) const;
 
-  [[nodiscard]] inline std::vector<DependencyResult> getToLoad(std::filesystem::path const& dependencyDir,
-                                                               LoadPhase phase) const {
-    std::unordered_map<std::string_view, std::vector<DependencyResult>> loadedDependencies{};
-    return getToLoad(dependencyDir, phase, loadedDependencies);
-  }
+  [[nodiscard]] std::vector<DependencyResult> getToLoad(std::filesystem::path const& dependencyDir,
+                                                        LoadPhase phase) const;
 };
 
 struct Dependency {
@@ -87,7 +84,14 @@ struct Dependency {
 
   Dependency(SharedObject object, std::vector<DependencyResult> dependencies)
       : object(std::move(object)), dependencies(std::move(dependencies)) {}
+  ~Dependency() = default;
 };
+
+[[nodiscard]] inline std::vector<DependencyResult> SharedObject::getToLoad(std::filesystem::path const& dependencyDir,
+                                                                           LoadPhase phase) const {
+  std::unordered_map<std::string_view, std::vector<DependencyResult>> loadedDependencies{};
+  return getToLoad(dependencyDir, phase, loadedDependencies);
+}
 
 enum struct MatchType {
   kStrict,
