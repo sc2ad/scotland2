@@ -10,7 +10,7 @@ on:
       - "version-*"
 
 env:
-  module_id: scotland2
+  module_id: sl2
   cache-name: sl2_cache
 
 jobs:
