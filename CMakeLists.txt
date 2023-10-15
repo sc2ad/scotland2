@@ -36,6 +36,7 @@ set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_compile_options(-fPIE -flto -fPIC -fno-exceptions -fno-rtti -fvisibility=hidden)
 add_compile_definitions(MOD_VERSION=\"${MOD_VERSION}\")
 add_compile_definitions(MOD_ID=\"${MOD_ID}\")
+# Ensure we don't create any references through flamingo
 add_compile_definitions(FLAMINGO_HEADER_ONLY)
 add_compile_options(-Wall -Wextra -Werror -Wpedantic -Wno-gnu-zero-variadic-macro-arguments)
 # add_link_options(-fuse-ld=lld)
@@ -62,10 +63,17 @@ target_include_directories(${COMPILE_ID} PRIVATE ${INCLUDE_DIR})
 # add shared dir as include dir
 target_include_directories(${COMPILE_ID} PUBLIC ${SHARED_DIR})
 
-
-
 include(extern.cmake)
 MESSAGE(STATUS "extern added!")
+
+# Specifically remove the libflamingo.so dependency, as we want to compile directly via extraFiles
+get_target_property(LINKED_LIBS ${COMPILE_ID} LINK_LIBRARIES)
+message("Libraries being linked: ${LINKED_LIBS}")
+list(REMOVE_ITEM LINKED_LIBS ${EXTERN_DIR}/libs/libflamingo.so)
+message("After removal: ${LINKED_LIBS}")
+set_property(TARGET ${COMPILE_ID} PROPERTY LINK_LIBRARIES ${LINKED_LIBS})
+# Add include specifically for flamingo shared folder
+target_include_directories(${COMPILE_ID} PRIVATE ${EXTERN_DIR}/includes/flamingo/shared)
 
 
 if (${BUILD_FOR} STREQUAL LINUX)

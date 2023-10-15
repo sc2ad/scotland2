@@ -22,7 +22,23 @@
       "additionalData": {
         "private": true
       }
+    },
+    {
+      "id": "flamingo",
+      "versionRange": "^0.1.0",
+      "additionalData": {
+        "private": true,
+        "extraFiles": [
+          "src/trampoline"
+        ]
+      }
     }
   ],
-  "workspace": null
+  "workspace": {
+    "scripts": {
+      "build": [
+        "pwsh ./build.ps1"
+      ]
+    }
+  }
 }

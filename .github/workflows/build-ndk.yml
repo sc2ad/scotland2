@@ -4,110 +4,67 @@ on:
   workflow_dispatch:
   push:
     branches-ignore:
-    - 'version-*'
+      - "version-*"
   pull_request:
     branches-ignore:
-    - 'version-*'
+      - "version-*"
 
 env:
-    module_id: flamingo
+  module_id: scotland2
+  cache-name: sl2_cache
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - uses: actions/checkout@v2
-      name: Checkout
-      with:
-        submodules: true
-        lfs: true
-      
-    - uses: seanmiddleditch/gha-setup-ninja@v3
+      - uses: actions/checkout@v2
+        name: Checkout
+        with:
+          submodules: true
 
-    - name: Create ndkpath.txt
-      run: |
-        echo "$ANDROID_NDK_LATEST_HOME" > ${GITHUB_WORKSPACE}/ndkpath.txt
-        cat ${GITHUB_WORKSPACE}/ndkpath.txt
-        
-    - name: Get QPM
-      if: steps.cache-qpm.outputs.cache-hit != 'true'
-      uses: dawidd6/action-download-artifact@v2
-      with:
-        github_token: ${{secrets.GITHUB_TOKEN}}
-        workflow: cargo-build.yml
-        name: linux-qpm-rust
-        path: QPM
-        repo: RedBrumbler/QuestPackageManager-Rust
-        
-    - name: QPM Collapse
-      run: |
-        chmod +x ./QPM/qpm-rust
-        ./QPM/qpm-rust collapse
-    
-    - name: QPM Dependencies Cache
-      id: cache-qpm-deps
-      uses: actions/cache@v2
-      env:
-        cache-name: cache-qpm-deps
-      with:
-        path: /home/runner/.local/share/QPM-Rust/cache
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('qpm.json') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-      
-    
-    - name: QPM Restore
-      run: |
-        ./QPM/qpm-rust restore
-    
-    - name: List Post Restore
-      run: |
-        echo includes:
-        ls -la ${GITHUB_WORKSPACE}/extern/includes
-        echo libs:
-        ls -la ${GITHUB_WORKSPACE}/extern/libs
-        echo cache:
-        ls -la $HOME/.local/share/QPM-Rust/cache
+      - uses: seanmiddleditch/gha-setup-ninja@v3
 
-    - name: Prepare Clang Tidy Suggestions
-      if: ${{ github.event_name == 'pull_request' }}
-      run: cmake -G "Ninja" -DCMAKE_BUILD_TYPE="RelWithDebInfo" -DTEST_BUILD=1 -B build
+      - name: Create ndkpath.txt
+        run: |
+          echo "$ANDROID_NDK_LATEST_HOME" > ${GITHUB_WORKSPACE}/ndkpath.txt
+          cat ${GITHUB_WORKSPACE}/ndkpath.txt
 
-    - name: Clang Tidy Suggestions
-      if: ${{ github.event_name == 'pull_request' }}
-      uses: ZedThree/clang-tidy-review@v0.7.0
-      id: review
-      # If there are any comments, don't build
-    - name: Clang Tidy Exit
-      if: ${{ github.event_name == 'pull_request' }} && steps.review.outputs.total_comments > 0
-      run: exit 1
-    
-    - name: Build
-      run: |
-        cd ${GITHUB_WORKSPACE}
-        pwsh -Command ./build.ps1
-    
-    - name: Get Library Name
-      id: libname
-      run: |
-        cd ./build/
-        pattern="lib${module_id}*.so"
-        files=( $pattern )
-        echo ::set-output name=NAME::"${files[0]}"
-    
-    - name: Upload non-debug artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: ${{ steps.libname.outputs.NAME }}
-        path: ./build/${{ steps.libname.outputs.NAME }}
-        if-no-files-found: error
+      - name: QPM Rust Action
+        uses: Fernthedev/qpm-rust-action@main
+        with:
+          #required
+          workflow_token: ${{secrets.GITHUB_TOKEN}}
 
-    - name: Upload debug artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: debug_${{ steps.libname.outputs.NAME }}
-        path: ./build/debug_${{ steps.libname.outputs.NAME }}
-        if-no-files-found: error
+          restore: true # will run restore on download
+          cache: true #will cache dependencies
+
+      - name: QPM Collapse
+        run: qpm-rust collapse
+
+      - name: Build
+        run: |
+          cd ${GITHUB_WORKSPACE}
+          qpm-rust s build
+
+      - name: Get Library Name
+        id: libname
+        run: |
+          cd ./build/
+          pattern="lib${module_id}*.so"
+          files=( $pattern )
+          echo ::set-output name=NAME::"${files[0]}"
+
+      - name: Upload non-debug artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ steps.libname.outputs.NAME }}
+          path: ./build/${{ steps.libname.outputs.NAME }}
+          if-no-files-found: error
+
+      - name: Upload debug artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: debug_${{ steps.libname.outputs.NAME }}
+          path: ./build/debug_${{ steps.libname.outputs.NAME }}
+          if-no-files-found: error
