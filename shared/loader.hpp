@@ -15,9 +15,14 @@
 #include <variant>
 #include <vector>
 
-#include <fmt/core.h>
 #include "constexpr-map.hpp"
 #include "modloader.h"
+
+// Make fmt an optional dependency, we will just improve debugging facilities if it is defined
+#if __has_include(<fmt/core.h>) && !defined(MODLOADER_NO_FMT)
+#include <fmt/core.h>
+#define MODLOADER_USE_FMT
+#endif
 
 namespace modloader {
 
@@ -31,9 +36,11 @@ enum struct LoadPhase {
   Mods,
 };
 
+#ifdef MODLOADER_USE_FMT
 inline auto format_as(LoadPhase p) {
   return fmt::underlying(p);
 }
+#endif
 
 using namespace std::literals::string_view_literals;
 constexpr static ConstexprMap loadPhaseMap(std::array<std::pair<LoadPhase, std::string_view>, 3>{
@@ -234,6 +241,7 @@ MODLOADER_EXPORT bool force_unload(ModInfo info, MatchType type) noexcept;
 
 }  // namespace modloader
 
+#ifdef MODLOADER_USE_FMT
 // Format specializations
 template <>
 struct fmt::formatter<modloader::ModInfo> {
@@ -247,3 +255,4 @@ struct fmt::formatter<modloader::ModInfo> {
     return fmt::format_to(ctx.out(), "id: {} version: {} version tag: {}", info.id, info.version, info.versionLong);
   }
 };
+#endif
