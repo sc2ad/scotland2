@@ -176,7 +176,7 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
   }
 }
 
-void load_mods() noexcept {
+void load_early_mods() noexcept {
   // Call load on all early mods
   for (auto& m : loaded_early_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {

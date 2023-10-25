@@ -59,7 +59,7 @@ void install_load_hook(uint32_t* target) {
     // Call orig first
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
     reinterpret_cast<void (*)(char const*)>(trampoline.address.data())(domain_name);
-    modloader::load_mods();
+    modloader::load_early_mods();
   };
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+init_hook));
   target_hook.Finish();

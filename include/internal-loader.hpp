@@ -34,9 +34,12 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
 /// @param filesDir The destination to copy the libraries to in order to ensure correct permissions.
 void open_libs(std::filesystem::path const& filesDir) noexcept;
 
+/// @brief Opens the early mods from the @ref loadPhaseMap and places them in the filesDir provided.
+/// @param filesDir The destination to copy the early mods to in order to ensure correct permissions.
 void open_early_mods(std::filesystem::path const& filesDir) noexcept;
 
-void load_mods() noexcept;
+/// @brief Calls load on early mods
+void load_early_mods() noexcept;
 
 void close_all() noexcept;
 
