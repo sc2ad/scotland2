@@ -176,11 +176,63 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
   }
 }
 
+void open_mods(std::filesystem::path const& filesDir) noexcept {
+  // Construct mods (aka 'late' unity mods), should be happening after unity is inited (first scene loaded)
+  auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods);
+  loaded_mods = loadMods(mod_sos, filesDir, skip_load, LoadPhase::Mods);
+  // Call initialize and report errors
+  for (auto& m : loaded_mods) {
+    if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      // Call init, note that it is a mutable call
+      if (!loaded_mod->init()) {
+        // Setup call does not exist, but the mod was still loaded
+        LOG_INFO("No setup on mod: {}", loaded_mod->object.path.c_str());
+      }
+    } else if (auto* fail = std::get_if<FailedMod>(&m)) {
+      LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
+    }
+  }
+}
+
 void load_early_mods() noexcept {
   // Call load on all early mods
   for (auto& m : loaded_early_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
       if (!loaded_mod->load()) {
+        // Load call does not exist, but the mod was still loaded
+        LOG_INFO("No load function on mod: {}", loaded_mod->object.path.c_str());
+      }
+    } else if (auto* fail = std::get_if<FailedMod>(&m)) {
+      LOG_WARN("Skipping load call on: {} because it failed to be constructed: {}", fail->object.path.c_str(),
+               fail->failure.c_str());
+    }
+  }
+}
+
+// calls load on mods, late_load on early mods
+void load_mods() noexcept {
+  // call late_load on all early mods
+  for (auto& m : loaded_early_mods) {
+    if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      if (!loaded_mod->late_load()) {
+        // Late load call does not exist, but the mod was still loaded
+        LOG_INFO("No late_load function on mod: {}", loaded_mod->object.path.c_str());
+      }
+    } else if (auto* fail = std::get_if<FailedMod>(&m)) {
+      LOG_WARN("Skipping load_late call on: {} because it failed to be constructed: {}", fail->object.path.c_str(),
+               fail->failure.c_str());
+    }
+  }
+
+  // call load and late_load on all mods
+  for (auto& m : loaded_mods) {
+    if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      if (!loaded_mod->load()) {
+        // Load call does not exist, but the mod was still loaded
+        LOG_INFO("No load function on mod: {}", loaded_mod->object.path.c_str());
+      }
+      // next we call late load on the mod
+      if (!loaded_mod->late_load()) {
         // Load call does not exist, but the mod was still loaded
         LOG_INFO("No load function on mod: {}", loaded_mod->object.path.c_str());
       }

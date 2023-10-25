@@ -53,6 +53,7 @@ struct ModInfo;
 
 using SetupFunc = void (*)(CModInfo* modInfo) noexcept;
 using LoadFunc = void (*)() noexcept;
+using LateLoadFunc = void (*)() noexcept;
 using UnloadFunc = void (*)() noexcept;
 
 struct SharedObject {
@@ -171,6 +172,7 @@ struct LoadedMod {
 
   std::optional<SetupFunc> setupFn;
   std::optional<LoadFunc> loadFn;
+  std::optional<LateLoadFunc> late_loadFn;
   std::optional<UnloadFunc> unloadFn;
 
   void* handle;
@@ -181,12 +183,13 @@ struct LoadedMod {
   LoadedMod& operator=(LoadedMod const&) = delete;
 
   LoadedMod(ModInfo modInfo, SharedObject object, LoadPhase phase, std::optional<SetupFunc> setupFn,
-            std::optional<LoadFunc> loadFn, std::optional<UnloadFunc> unloadFn, void* handle)
+            std::optional<LoadFunc> loadFn, std::optional<LateLoadFunc> late_loadFn, std::optional<UnloadFunc> unloadFn, void* handle)
       : modInfo(std::move(modInfo)),
         object(std::move(object)),
         phase(phase),
         setupFn(setupFn),
         loadFn(loadFn),
+        late_loadFn(late_loadFn),
         unloadFn(unloadFn),
         handle(handle) {}
 
@@ -216,6 +219,17 @@ struct LoadedMod {
     }
     return false;
   }
+
+  /// @brief Calls the late_load function on the mod
+  /// @return true if thje call exists and was called, false otherwise
+  inline bool late_load() noexcept {
+    if (late_loadFn) {
+      (*late_loadFn)();
+      return true;
+    }
+    return false;
+  }
+
   /// @brief Calls the unload function on the mod
   /// @return true if the call exists and was called, false otherwise
   inline bool unload() noexcept {

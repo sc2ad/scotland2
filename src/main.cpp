@@ -67,6 +67,46 @@ void install_load_hook(uint32_t* target) {
                  fmt::ptr(target), fmt::ptr(+init_hook), fmt::ptr(trampoline.address.data()));
 }
 
+void install_unity_hook(uint32_t* target) {
+  // TODO: create the hook for hooking libunity.so::PlayerLoadFirstScene
+  // Size of the allocation size for the trampoline in bytes
+  constexpr static auto trampolineSize = 64;
+  // Size of the function we are hooking in instructions
+  constexpr static auto hookSize = 8;
+  // Size of the allocation page to mark as +rwx
+  constexpr static auto kPageSize = 4096ULL;
+  // Mostly throw-away reference
+  size_t trampoline_size = trampolineSize;
+  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
+  // We write fixups for the first 4 instructions in the target
+  trampoline.WriteHookFixups(target);
+  // Then write the jumpback at instruction 5 to continue the code
+  trampoline.WriteCallback(&target[4]);
+  trampoline.Finish();
+  // Ensure target is writable
+  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
+  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
+  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+    // Log error on mprotect!
+    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
+                   fmt::ptr(page_aligned_target), std::strerror(errno));
+  }
+  static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
+  // PlayerStartFirstScene has a bool parameter, my guess is that it is like the SceneManager::LoadFirstScene, where the bool param determines whether the load occurs as async
+  auto unity_hook = [](bool param) noexcept{
+    LOG_DEBUG("PlayerStartFirstScene called with param: {}", param);
+
+    reinterpret_cast<void (*)(bool)>(trampoline.address.data())(param);
+    LOG_DEBUG("Opening mods");
+    modloader::open_mods(modloader::get_files_dir());
+    LOG_DEBUG("Loading mods");
+    modloader::load_mods();
+  };
+  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
+  target_hook.Finish();
+  FLAMINGO_DEBUG("Hook installed! Target: {} (PlayerStartFirstScene) now will call: {} (hook), with trampoline: {}",
+                 fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
+}
 }  // namespace
 namespace modloader {
 
@@ -167,6 +207,7 @@ MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, 
     LOG_FATAL("Not loading mods because we failed!");
     return;
   }
+  modloader_unity_handle = unityHandle;
   modloader_libil2cpp_handle = dlopen(libil2cppPath.c_str(), RTLD_LOCAL | RTLD_LAZY);
   // On startup, we also want to protect everything, and ensure we have read/write
   modloader::protect_all();
@@ -179,10 +220,17 @@ MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, 
   }
   void* il2cpp_init = dlsym(modloader_libil2cpp_handle, "il2cpp_init");
   LOG_DEBUG("Found il2cpp_init at: {}", fmt::ptr(il2cpp_init));
-  modloader_unity_handle = unityHandle;
   // Hook il2cpp_init to redirect to us after loading, and load normal mods
   // TODO: We KNOW it has enough space for us, but we could technically double check this too.
   install_load_hook(reinterpret_cast<uint32_t*>(il2cpp_init));
+
+  void* unity_playerstartfirstscene = dlsym(modloader_unity_handle, "PlayerStartFirstScene");
+  // Hook PlayerStartFirstScene so we can load in mods (aka late mods)
+  // this method is ran to load the first scene of the game (null -> QuestInit for beat saber), and thus after this we are sure unity is initialized
+  // TODO: should we hook UnityInitApplication instead? there is no guarantee that things would work correctly that early, since no scene would be loaded yet
+  // TODO: should have enough space, but we can double check this too like for il2cpp init
+  LOG_DEBUG("Found PlayerStartFirstScene at: {}", fmt::ptr(unity_playerstartfirstscene));
+  install_unity_hook(reinterpret_cast<uint32_t*>(unity_playerstartfirstscene));
 }
 
 MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {

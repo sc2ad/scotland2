@@ -386,9 +386,10 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
 
     auto setupFn = getFunction<SetupFunc>(handle, "setup");
     auto loadFn = getFunction<LoadFunc>(handle, "load");
+    auto late_loadFn = getFunction<LateLoadFunc>(handle, "late_load");
     auto unloadFn = getFunction<UnloadFunc>(handle, "unload");
 
-    return LoadedMod(modInfo, std::move(obj), phase, setupFn, loadFn, unloadFn, handle);
+    return LoadedMod(modInfo, std::move(obj), phase, setupFn, loadFn, late_loadFn, unloadFn, handle);
   };
 
   auto deps = mod.getToLoad(dependencyDir, phase);

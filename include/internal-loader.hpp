@@ -38,8 +38,15 @@ void open_libs(std::filesystem::path const& filesDir) noexcept;
 /// @param filesDir The destination to copy the early mods to in order to ensure correct permissions.
 void open_early_mods(std::filesystem::path const& filesDir) noexcept;
 
+/// @brief Opens the mods from the @ref loadPhaseMap and places them in the filesDir provided.
+/// @param filesDir The destination to copy the mods to in order to ensure correct permissions.
+void open_mods(std::filesystem::path const& filesDir) noexcept;
+
 /// @brief Calls load on early mods
 void load_early_mods() noexcept;
+
+/// @brief Calls late_load on early mods, load and late_load
+void load_mods() noexcept;
 
 void close_all() noexcept;
 
