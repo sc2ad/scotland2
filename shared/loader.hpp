@@ -222,7 +222,7 @@ struct LoadedMod {
   }
 
   /// @brief Calls the late_load function on the mod
-  /// @return true if thje call exists and was called, false otherwise
+  /// @return true if the call exists and was called, false otherwise
   inline bool late_load() noexcept {
     if (late_loadFn) {
       (*late_loadFn)();

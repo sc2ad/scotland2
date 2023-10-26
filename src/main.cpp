@@ -166,7 +166,7 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] voi
   // this is not guaranteed to be the size across every libunty ever,
   // therefore it not matching is not cause for erroring out of the xref trace
   if (methsz != 0x19) {
-    LOG_ERROR("Method size found was {} (0x{:x}), while 25 (0x19) was expected", methsz, methsz);
+    LOG_WARN("Method size found was {} (0x{:x}), while 25 (0x19) was expected", methsz, methsz);
     LOG_DEBUG("Despite wrong method size, lookup will still be attempted, this could crash!");
   } else {
     LOG_DEBUG("Found native method array size {} (0x{:x})", methsz, methsz);
