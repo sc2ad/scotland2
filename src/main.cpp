@@ -13,6 +13,7 @@
 #include "modloader.h"
 #include "protect.hpp"
 
+#include "capstone-utils.hpp"
 #include "trampoline-allocator.hpp"
 #include "trampoline.hpp"
 #include "util.hpp"
@@ -56,23 +57,157 @@ void install_load_hook(uint32_t* target) {
   }
   static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
   auto init_hook = [](char const* domain_name) noexcept {
+    // TODO: uninstall hook after first call
     // Call orig first
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
     reinterpret_cast<void (*)(char const*)>(trampoline.address.data())(domain_name);
     modloader::load_early_mods();
   };
+  // TODO: mprotect memory again after we are done writing
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+init_hook));
   target_hook.Finish();
   FLAMINGO_DEBUG("Hook installed! Target: {} (il2cpp_init) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+init_hook), fmt::ptr(trampoline.address.data()));
 }
 
+// credits to https://github.com/ikoz/AndroidSubstrate_hookingC_examples/blob/master/nativeHook3/jni/nativeHook3.cy.cpp
+uintptr_t baseAddr(char const* soname, void* imagehandle) {
+  if (soname == NULL) return (uintptr_t)NULL;
+  if (imagehandle == NULL) return (uintptr_t)NULL;
+
+  FILE* f = NULL;
+  char line[200] = { 0 };
+  char* state = NULL;
+  char* tok = NULL;
+  char* baseAddr = NULL;
+  if ((f = fopen("/proc/self/maps", "r")) == NULL) return (uintptr_t)NULL;
+  while (fgets(line, 199, f) != NULL) {
+    tok = strtok_r(line, "-", &state);
+    baseAddr = tok;
+    strtok_r(NULL, "\t ", &state);
+    strtok_r(NULL, "\t ", &state);        // "r-xp" field
+    strtok_r(NULL, "\t ", &state);        // "0000000" field
+    strtok_r(NULL, "\t ", &state);        // "01:02" field
+    strtok_r(NULL, "\t ", &state);        // "133224" field
+    tok = strtok_r(NULL, "\t ", &state);  // path field
+
+    if (tok != NULL) {
+      int i;
+      for (i = (int)strlen(tok) - 1; i >= 0; --i) {
+        if (!(tok[i] == ' ' || tok[i] == '\r' || tok[i] == '\n' || tok[i] == '\t')) break;
+        tok[i] = 0;
+      }
+      {
+        size_t toklen = strlen(tok);
+        size_t solen = strlen(soname);
+        if (toklen > 0) {
+          if (toklen >= solen && strcmp(tok + (toklen - solen), soname) == 0) {
+            fclose(f);
+            return (uintptr_t)strtoll(baseAddr, NULL, 16);
+          }
+        }
+      }
+    }
+  }
+  fclose(f);
+  return (uintptr_t)NULL;
+}
+
+static std::optional<uint32_t*> movzFind(cs_insn* insn) {
+  return (insn->id == ARM64_INS_MOVZ) ? std::optional<uint32_t*>(reinterpret_cast<uint32_t*>(insn->address))
+                                      : std::nullopt;
+}
+
+#define RET_NULL_LOG_UNLESS(v)       \
+  if (!v) {                          \
+    LOG_ERROR("Could not find " #v); \
+    return nullptr;                  \
+  }
+
+#define LOG_OFFSET(name, val) LOG_DEBUG(name " found @ offset: {}", fmt::ptr((void*)((uintptr_t)val - unity_base)))
+
+/// @brief attempts to find the UnityPostLoadApplication method within libunity.so
+uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] void* unityHandle) noexcept {
+  // xref trace
+  // dlsym JNI_OnLoad
+  // 2nd bl to UnityPlayer::RegisterNatives
+  // 2nd pcAddr for the method array -> find nativeRender JNINativeMethod*
+  // 6th bl to UnityPlayerLoop
+  // 20th bl to UnityPostLoadApplication
+
+  // for logging purposes
+  auto unity_base = baseAddr((modloader::get_libil2cpp_path().parent_path() / "libunity.so").c_str(), unityHandle);
+
+  // exported symbol of libunity.so
+  auto jni_onload = static_cast<uint32_t*>(dlsym(unityHandle, "JNI_OnLoad"));
+  RET_NULL_LOG_UNLESS(jni_onload);
+  LOG_OFFSET("JNI_OnLoad", jni_onload);
+
+  // registerNatives is something used when interacting with jni from a native binary
+  auto registerNatives = cs::findNthBl<2>(jni_onload);
+  RET_NULL_LOG_UNLESS(registerNatives);
+  LOG_OFFSET("UnityPlayer::RegisterNatives", *registerNatives);
+
+  // an array of native methods registered for the unityplayer
+  auto s_UnityPlayerMethods = cs::getpcaddr<2, 1>(*registerNatives);
+  RET_NULL_LOG_UNLESS(s_UnityPlayerMethods);
+  LOG_OFFSET("s_UnityPlayerMethods", std::get<2>(*s_UnityPlayerMethods));
+
+  // method array ptr
+  JNINativeMethod* meths = reinterpret_cast<JNINativeMethod*>(std::get<2>(*s_UnityPlayerMethods));
+
+  // get the size of the method array
+  auto movSz = cs::findNth<1, &movzFind, &cs::insnMatch<>, 1>(*registerNatives);
+  RET_NULL_LOG_UNLESS(movSz);
+  auto ins = **movSz;
+  auto methsz = (ins >> 5) & 0xffff;
+
+  // 0x19 was the size of this array in the unstripped libunity we inject into beat saber.
+  // this is not guaranteed to be the size across every libunty ever,
+  // therefore it not matching is not cause for erroring out of the xref trace
+  if (methsz != 0x19) {
+    LOG_ERROR("Method size found was {} (0x{:x}), while 25 (0x19) was expected", methsz, methsz);
+    LOG_DEBUG("Despite wrong method size, lookup will still be attempted, this could crash!");
+  } else {
+    LOG_DEBUG("Found native method array size {} (0x{:x})", methsz, methsz);
+  }
+
+  // walk the native array until we find nativeRender or until we run out of methods
+  JNINativeMethod* nativeRenderMethod = nullptr;
+  auto mend = meths + methsz;
+  for (auto method = meths; method != mend; method++) {
+    if (strcmp(method->name, "nativeRender") == 0) {
+      nativeRenderMethod = method;
+      break;
+    }
+  }
+
+  RET_NULL_LOG_UNLESS(nativeRenderMethod);
+  // get the method pointer for nativeRender
+  auto nativeRender = static_cast<uint32_t*>(nativeRenderMethod->fnPtr);
+  LOG_OFFSET("nativeRender", nativeRender);
+
+  // main player loop
+  auto unityplayerloop = cs::findNthBl<6>(nativeRender);
+  RET_NULL_LOG_UNLESS(unityplayerloop);
+  LOG_OFFSET("UnityPlayerLoop", *unityplayerloop);
+
+  // this gets called after the first scene has loaded and unity has initialized
+  auto unitypostloadapplication = cs::findNthBl<20>(*unityplayerloop);
+  RET_NULL_LOG_UNLESS(unitypostloadapplication);
+  LOG_OFFSET("UnityPostLoadApplication", *unitypostloadapplication);
+
+  return *unitypostloadapplication;
+}
+
+#undef LOG_OFFSET
+#undef RET_NULL_LOG_UNLESS
+
 void install_unity_hook(uint32_t* target) {
-  // TODO: create the hook for hooking libunity.so::PlayerLoadFirstScene
   // Size of the allocation size for the trampoline in bytes
   constexpr static auto trampolineSize = 64;
   // Size of the function we are hooking in instructions
-  constexpr static auto hookSize = 8;
+  constexpr static auto hookSize = 33;
   // Size of the allocation page to mark as +rwx
   constexpr static auto kPageSize = 4096ULL;
   // Mostly throw-away reference
@@ -92,11 +227,16 @@ void install_unity_hook(uint32_t* target) {
                    fmt::ptr(page_aligned_target), std::strerror(errno));
   }
   static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
-  // PlayerStartFirstScene has a bool parameter, my guess is that it is like the SceneManager::LoadFirstScene, where the bool param determines whether the load occurs as async
-  auto unity_hook = [](bool param) noexcept{
-    LOG_DEBUG("PlayerStartFirstScene called with param: {}", param);
+  // UnityPostLoadApplication is called after scenes are all setup
+  // bool param determines whether the load occurs as async
+  auto unity_hook = []() noexcept {
+    // TODO: uninstall hook after one call
+    LOG_DEBUG("UnityPostLoadApplication called");
 
-    reinterpret_cast<void (*)(bool)>(trampoline.address.data())(param);
+    // call base first
+    reinterpret_cast<void (*)(void)>(trampoline.address.data())();
+
+    // open mods and call load / late_load on things that require it
     LOG_DEBUG("Opening mods");
     modloader::open_mods(modloader::get_files_dir());
     LOG_DEBUG("Loading mods");
@@ -104,7 +244,8 @@ void install_unity_hook(uint32_t* target) {
   };
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
   target_hook.Finish();
-  FLAMINGO_DEBUG("Hook installed! Target: {} (PlayerStartFirstScene) now will call: {} (hook), with trampoline: {}",
+  // TODO: mprotect memory again after we are done writing
+  FLAMINGO_DEBUG("Hook installed! Target: {} (UnityPostLoadApplication) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
 }
 }  // namespace
@@ -224,13 +365,18 @@ MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, 
   // TODO: We KNOW it has enough space for us, but we could technically double check this too.
   install_load_hook(reinterpret_cast<uint32_t*>(il2cpp_init));
 
-  void* unity_playerstartfirstscene = dlsym(modloader_unity_handle, "PlayerStartFirstScene");
-  // Hook PlayerStartFirstScene so we can load in mods (aka late mods)
-  // this method is ran to load the first scene of the game (null -> QuestInit for beat saber), and thus after this we are sure unity is initialized
-  // TODO: should we hook UnityInitApplication instead? there is no guarantee that things would work correctly that early, since no scene would be loaded yet
+  // Hook UnityPostLoadApplication so we can load in mods (aka late mods)
+  // this method is ran after unity is initialized
   // TODO: should have enough space, but we can double check this too like for il2cpp init
-  LOG_DEBUG("Found PlayerStartFirstScene at: {}", fmt::ptr(unity_playerstartfirstscene));
-  install_unity_hook(reinterpret_cast<uint32_t*>(unity_playerstartfirstscene));
+  auto unity_hook_loc = find_unity_hook_loc(env, unityHandle);
+  if (!unity_hook_loc) {
+    LOG_ERROR(
+        "Could not find unity hook location, "
+        "late_load will not be called for early mods, and mods will not be opened!");
+  } else {
+    LOG_DEBUG("Found UnityPostLoadApplication @ {}", fmt::ptr(unity_hook_loc));
+    install_unity_hook(static_cast<uint32_t*>(unity_hook_loc));
+  }
 }
 
 MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {
