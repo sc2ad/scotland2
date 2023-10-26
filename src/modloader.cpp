@@ -209,7 +209,7 @@ void load_early_mods() noexcept {
   }
 }
 
-// calls load on mods, late_load on early mods
+// calls late_load on mods and early mods
 void load_mods() noexcept {
   // call late_load on all early mods
   for (auto& m : loaded_early_mods) {
@@ -224,20 +224,15 @@ void load_mods() noexcept {
     }
   }
 
-  // call load and late_load on all mods
+  // call late_load on all mods
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
-      if (!loaded_mod->load()) {
-        // Load call does not exist, but the mod was still loaded
-        LOG_INFO("No load function on mod: {}", loaded_mod->object.path.c_str());
-      }
-      // next we call late load on the mod
       if (!loaded_mod->late_load()) {
         // Load call does not exist, but the mod was still loaded
-        LOG_INFO("No load function on mod: {}", loaded_mod->object.path.c_str());
+        LOG_INFO("No late_load function on mod: {}", loaded_mod->object.path.c_str());
       }
     } else if (auto* fail = std::get_if<FailedMod>(&m)) {
-      LOG_WARN("Skipping load call on: {} because it failed to be constructed: {}", fail->object.path.c_str(),
+      LOG_WARN("Skipping late_load call on: {} because it failed to be constructed: {}", fail->object.path.c_str(),
                fail->failure.c_str());
     }
   }
