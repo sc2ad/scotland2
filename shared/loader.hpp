@@ -183,7 +183,8 @@ struct LoadedMod {
   LoadedMod& operator=(LoadedMod const&) = delete;
 
   LoadedMod(ModInfo modInfo, SharedObject object, LoadPhase phase, std::optional<SetupFunc> setupFn,
-            std::optional<LoadFunc> loadFn, std::optional<LateLoadFunc> late_loadFn, std::optional<UnloadFunc> unloadFn, void* handle)
+            std::optional<LoadFunc> loadFn, std::optional<LateLoadFunc> late_loadFn, std::optional<UnloadFunc> unloadFn,
+            void* handle)
       : modInfo(std::move(modInfo)),
         object(std::move(object)),
         phase(phase),
