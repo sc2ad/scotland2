@@ -113,57 +113,6 @@ uintptr_t baseAddr(char const* soname, void* imagehandle) {
   return (uintptr_t)NULL;
 }
 
-template <auto ins>
-static std::optional<uint32_t*> findIns(cs_insn* insn) {
-  return (insn->id == ins) ? std::optional<uint32_t*>(reinterpret_cast<uint32_t*>(insn->address)) : std::nullopt;
-}
-
-/// @return optional tuple containing found tbz ins, offset it requests off of itself, and the offset it points to, or
-/// nullopt if not found
-template <auto ret_on>
-static std::optional<std::tuple<uint32_t*, uint32_t, uint32_t*>> getTbzAddr(uint32_t* address) {
-  // the label to jump to for tbz is 14 bits wide
-  auto tbz = cs::findNth<ret_on, &findIns<ARM64_INS_TBZ>, cs::insnMatch<>, 1>(address);
-  if (!tbz) return std::nullopt;
-
-  static constexpr auto mask = 0x3fff;
-  static constexpr auto pos = 5;
-  auto offset = (**tbz >> pos) & mask;
-  return { { *tbz, offset, *tbz + offset } };
-}
-
-struct BCond {
-  uint32_t cond : 4;        // arm64 conditional
-  const uint32_t zero : 1;  // always 0
-  uint32_t offset : 19;     // offset off of this instruction
-  uint32_t ins : 8;         // instruction bits
-};
-static_assert(sizeof(BCond) == sizeof(uint32_t));
-
-/// @brief matches a b.cond where cond is an arm64_cc conditional
-template <arm64_cc condition>
-static std::optional<uint32_t*> matchBCond(cs_insn* insn) {
-  static constexpr auto b_cond_ins = 0x54;
-  // the arm64_cc enum is consistently the actual conditionals + 1
-  static constexpr auto actual_condition = (condition - 1);
-  auto const bcond = reinterpret_cast<BCond*>(insn->address);
-  // if we are not a b conditional
-  if (bcond->ins != b_cond_ins) return std::nullopt;
-  if (bcond->cond != actual_condition) return std::nullopt;
-  return reinterpret_cast<uint32_t*>(insn->address);
-}
-
-/// @brief gets the nth bCondAddr, and returns a tuple containing the address of the found b.cond, the offset it will
-/// jump and the target address. returns nullopt if not found
-template <size_t ret_on, arm64_cc condition>
-static std::optional<std::tuple<uint32_t*, uint32_t, uint32_t*>> getBCondAddr(uint32_t* address) {
-  auto bcond = cs::findNth<ret_on, &matchBCond<condition>, &cs::insnMatch<>, 1>(address);
-  if (!bcond) return std::nullopt;
-
-  auto bc = reinterpret_cast<BCond*>(*bcond);
-  return { { *bcond, (uint32_t)bc->offset, *bcond + bc->offset } };
-}
-
 #define RET_NULL_LOG_UNLESS(v)       \
   if (!v) {                          \
     LOG_ERROR("Could not find " #v); \
@@ -203,10 +152,9 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] voi
   JNINativeMethod* meths = reinterpret_cast<JNINativeMethod*>(std::get<2>(*s_UnityPlayerMethods));
 
   // get the size of the method array
-  auto movSz = cs::findNth<1, &findIns<ARM64_INS_MOVZ>, &cs::insnMatch<>, 1>(*registerNatives);
+  auto movSz = cs::getMovzValue<1>(*registerNatives);
   RET_NULL_LOG_UNLESS(movSz);
-  auto ins = **movSz;
-  auto methsz = (ins >> 5) & 0xffff;
+  auto methsz = std::get<1>(*movSz);
 
   // 0x19 was the size of this array in the unstripped libunity we inject into beat saber.
   // this is not guaranteed to be the size across every libunty ever,
@@ -242,19 +190,19 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] voi
   // across different unity versions. A different strategy is to follow a few jumps across labels, and end up at the
   // right label instead to get the second bl there.
 
-  auto pendingWindow = getTbzAddr<2>(*unityplayerloop);
+  auto pendingWindow = cs::getTbzAddr<2>(*unityplayerloop);
   RET_NULL_LOG_UNLESS(pendingWindow);
   LOG_OFFSET("pendingWindow check", std::get<2>(*pendingWindow));
 
-  auto levelLoaded = getTbzAddr<1>(std::get<2>(*pendingWindow));
+  auto levelLoaded = cs::getTbzAddr<1>(std::get<2>(*pendingWindow));
   RET_NULL_LOG_UNLESS(levelLoaded);
   LOG_OFFSET("levelLoaded check", std::get<2>(*levelLoaded));
 
-  auto initialized = getBCondAddr<1, ARM64_CC_NE>(std::get<2>(*levelLoaded));
+  auto initialized = cs::getBCondAddr<1, ARM64_CC_NE>(std::get<2>(*levelLoaded));
   RET_NULL_LOG_UNLESS(initialized);
   LOG_OFFSET("initialized check", std::get<2>(*initialized));
 
-  auto splashScreen = getTbzAddr<1>(std::get<2>(*initialized));
+  auto splashScreen = cs::getTbzAddr<1>(std::get<2>(*initialized));
   RET_NULL_LOG_UNLESS(splashScreen);
   LOG_OFFSET("splashScreen check", std::get<2>(*splashScreen));
 

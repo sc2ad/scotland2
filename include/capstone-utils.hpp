@@ -300,4 +300,83 @@ std::optional<uint32_t*> evalswitch(uint32_t const* addr) {
   // Add offset to switch table and convert back to pointer type
   return reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(switchTable) + val);
 }
+
+template <auto ins>
+static std::optional<uint32_t*> findIns(cs_insn* insn) {
+  return (insn->id == ins) ? std::optional<uint32_t*>(reinterpret_cast<uint32_t*>(insn->address)) : std::nullopt;
+}
+
+struct TBZ {
+  uint32_t reg : 5;      // which register to use, 0-31
+  uint32_t offset : 14;  // offset is in instructions, not in bytes
+  uint32_t test : 5;     // which bits to test, also relates to the width variable
+  uint32_t opc : 7;      // opcode
+  uint32_t width : 1;    // whether this is an x or w register, 0 meaning W and 1 meaning X
+};
+static_assert(sizeof(TBZ) == sizeof(uint32_t));
+
+/// @return optional tuple containing found tbz ins, offset it requests off of itself, and the offset it points to, or
+/// nullopt if not found
+template <auto ret_on>
+static std::optional<std::tuple<uint32_t*, uint32_t, uint32_t*>> getTbzAddr(uint32_t* address) {
+  // the label to jump to for tbz is 14 bits wide
+  auto tbz = cs::findNth<ret_on, &findIns<ARM64_INS_TBZ>, cs::insnMatch<>, 1>(address);
+  if (!tbz) return std::nullopt;
+
+  auto t = reinterpret_cast<TBZ*>(*tbz);
+  return { { *tbz, (uint32_t)t->offset, *tbz + t->offset } };
+}
+
+struct BCond {
+  uint32_t cond : 4;        // arm64 conditional
+  const uint32_t zero : 1;  // always 0
+  uint32_t offset : 19;     // offset off of this instruction
+  uint32_t opc : 8;         // opcode
+};
+static_assert(sizeof(BCond) == sizeof(uint32_t));
+
+/// @brief matches a b.cond where cond is an arm64_cc conditional
+template <arm64_cc condition>
+static std::optional<uint32_t*> matchBCond(cs_insn* insn) {
+  static constexpr auto b_cond_ins = 0x54;
+  // the arm64_cc enum is consistently the actual conditionals + 1
+  static constexpr auto actual_condition = (condition - 1);
+  auto const bcond = reinterpret_cast<BCond*>(insn->address);
+  // if we are not a b conditional
+  if (bcond->opc != b_cond_ins) return std::nullopt;
+  if (bcond->cond != actual_condition) return std::nullopt;
+  return reinterpret_cast<uint32_t*>(insn->address);
+}
+
+/// @brief gets the nth bCondAddr, and returns a tuple containing the address of the found b.cond, the offset it will
+/// jump and the target address. returns nullopt if not found
+template <size_t ret_on, arm64_cc condition>
+static std::optional<std::tuple<uint32_t*, uint32_t, uint32_t*>> getBCondAddr(uint32_t* address) {
+  auto bcond = cs::findNth<ret_on, &matchBCond<condition>, &cs::insnMatch<>, 1>(address);
+  if (!bcond) return std::nullopt;
+
+  auto bc = reinterpret_cast<BCond*>(*bcond);
+  return { { *bcond, (uint32_t)bc->offset, *bcond + bc->offset } };
+}
+
+struct Movz {
+  uint32_t reg : 5;     // which register to store the value in
+  uint32_t value : 16;  // value
+  uint32_t hw : 2;      // optional left shift of value
+  uint32_t opc : 8;     // opcode
+  uint32_t sf : 1;      // 32 or 64 bit register, 0 for 32, 1 for 64
+};
+static_assert(sizeof(Movz) == sizeof(uint32_t));
+
+/// @brief gets the nth movz instruction, and returns a tuple containing it's address and the value it moves
+template <size_t ret_on>
+static std::optional<std::tuple<uint32_t*, uint64_t>> getMovzValue(uint32_t* address) {
+  auto movz = cs::findNth<ret_on, &findIns<ARM64_INS_MOVZ>, &cs::insnMatch<>, 1>(address);
+  if (!movz) return std::nullopt;
+
+  auto m = reinterpret_cast<Movz*>(*movz);
+
+  auto shift = (m->sf ? m->hw : m->hw & 0b1) * 16;
+  return { { *movz, ((uint64_t)m->value << shift) } };
+}
 }  // namespace cs
