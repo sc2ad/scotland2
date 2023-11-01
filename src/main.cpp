@@ -121,14 +121,20 @@ uintptr_t baseAddr(char const* soname, void* imagehandle) {
 
 #define LOG_OFFSET(name, val) LOG_DEBUG(name " found @ offset: {}", fmt::ptr((void*)((uintptr_t)val - unity_base)))
 
-/// @brief attempts to find the UnityPostLoadApplication method within libunity.so
+/// @brief attempts to find the ClearRoots method within libunity.so
 uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] void* unityHandle) noexcept {
   // xref trace
   // dlsym JNI_OnLoad
   // 2nd bl to UnityPlayer::RegisterNatives
   // 2nd pcAddr for the method array -> find nativeRender JNINativeMethod*
   // 6th bl to UnityPlayerLoop
-  // 20th bl to UnityPostLoadApplication
+  // 2nd tbz to pendingWindow check target
+  // 1st tbz to levelLoaded check target
+  // 1st b.ne to initialized check target
+  // 1st tbz to splashScreen check target
+  // 1st bl to LoadFirstScene
+  // 9th bl to StartFirstScene
+  // 2nd bl to ClearRoots
 
   // for logging purposes
   auto unity_base = baseAddr((modloader::get_libil2cpp_path().parent_path() / "libunity.so").c_str(), unityHandle);
@@ -186,9 +192,9 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] voi
   RET_NULL_LOG_UNLESS(unityplayerloop);
   LOG_OFFSET("UnityPlayerLoop", *unityplayerloop);
 
-  // we want to find UnityPostLoadApplication, we can do this either by finding the 20th or so bl, but this breaks
+  // we want to find LoadFirstScene, we can do this either by finding the 20th or so bl, but this breaks
   // across different unity versions. A different strategy is to follow a few jumps across labels, and end up at the
-  // right label instead to get the second bl there.
+  // right label instead to get the first bl there to get to LoadFirstScene.
 
   auto pendingWindow = cs::getTbzAddr<2>(*unityplayerloop);
   RET_NULL_LOG_UNLESS(pendingWindow);
@@ -206,11 +212,19 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] voi
   RET_NULL_LOG_UNLESS(splashScreen);
   LOG_OFFSET("splashScreen check", std::get<2>(*splashScreen));
 
-  auto unitypostloadapplication = cs::findNthBl<2>(std::get<2>(*splashScreen));
-  RET_NULL_LOG_UNLESS(unitypostloadapplication);
-  LOG_OFFSET("UnityPostLoadApplication", *unitypostloadapplication);
+  auto loadfirstscene = cs::findNthBl<1>(std::get<2>(*splashScreen));
+  RET_NULL_LOG_UNLESS(loadfirstscene);
+  LOG_OFFSET("LoadFirstScene", *loadfirstscene);
 
-  return *unitypostloadapplication;
+  auto startFirstScene = cs::findNthBl<9>(*loadfirstscene);
+  RET_NULL_LOG_UNLESS(startFirstScene);
+  LOG_OFFSET("StartFirstScene", *startFirstScene);
+
+  auto clearRoots = cs::findNthBl<2>(*startFirstScene);
+  RET_NULL_LOG_UNLESS(clearRoots);
+  LOG_OFFSET("ClearRoots", *clearRoots);
+
+  return *clearRoots;
 }
 
 #undef LOG_OFFSET
@@ -240,14 +254,16 @@ void install_unity_hook(uint32_t* target) {
                    fmt::ptr(page_aligned_target), std::strerror(errno));
   }
   static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
-  // UnityPostLoadApplication is called after scenes are all setup
-  // bool param determines whether the load occurs as async
-  auto unity_hook = []() noexcept {
-    // TODO: uninstall hook after one call
-    LOG_DEBUG("UnityPostLoadApplication called");
+  // we hook ClearRoots which is a method called at the start of StartFirstScene.
+  // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
+  // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
+  auto unity_hook = [](void* param_1) noexcept {
+    // First param is assumed to be a linked list, stored on the SceneManager.
+    // this linked list is iterated over by ClearRoots and all unity objects are destroyed.
+    LOG_DEBUG("ClearRoots called with param {}", fmt::ptr(param_1));
 
-    // call base first
-    reinterpret_cast<void (*)(void)>(trampoline.address.data())();
+    // call orig
+    reinterpret_cast<void (*)(void*)>(trampoline.address.data())(param_1);
 
     // open mods and call load / late_load on things that require it
     LOG_DEBUG("Opening mods");
@@ -258,7 +274,7 @@ void install_unity_hook(uint32_t* target) {
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
   target_hook.Finish();
   // TODO: mprotect memory again after we are done writing
-  FLAMINGO_DEBUG("Hook installed! Target: {} (UnityPostLoadApplication) now will call: {} (hook), with trampoline: {}",
+  FLAMINGO_DEBUG("Hook installed! Target: {} (ClearRoots) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
 }
 }  // namespace
@@ -378,8 +394,8 @@ MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, 
   // TODO: We KNOW it has enough space for us, but we could technically double check this too.
   install_load_hook(reinterpret_cast<uint32_t*>(il2cpp_init));
 
-  // Hook UnityPostLoadApplication so we can load in mods (aka late mods)
-  // this method is ran after unity is initialized
+  // Hook ClearRoots (in StartFirstScene) so we can load in mods (aka late mods)
+  // this method is ran to clear all unity objects, after which the first scene is loaded
   // TODO: should have enough space, but we can double check this too like for il2cpp init
   auto unity_hook_loc = find_unity_hook_loc(env, unityHandle);
   if (!unity_hook_loc) {
@@ -387,7 +403,7 @@ MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, 
         "Could not find unity hook location, "
         "late_load will not be called for early mods, and mods will not be opened!");
   } else {
-    LOG_DEBUG("Found UnityPostLoadApplication @ {}", fmt::ptr(unity_hook_loc));
+    LOG_DEBUG("Found ClearRoots @ {}", fmt::ptr(unity_hook_loc));
     install_unity_hook(static_cast<uint32_t*>(unity_hook_loc));
   }
 }
