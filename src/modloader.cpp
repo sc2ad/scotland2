@@ -81,8 +81,13 @@ void statdump([[maybe_unused]] fs::path const& path) {}
 void ensure_dir_exists(std::filesystem::path const& dir) {
   // First, statdump the dir
   statdump(dir);
-  // Next, attempt to create the directory
   std::error_code err{};
+  // Then check whether it exists
+  if (std::filesystem::exists(dir, err)) {
+    LOG_WARN("Directory {} already existed", dir.c_str());
+    return;
+  }
+  // Next, attempt to create the directory
   if (!std::filesystem::create_directories(dir, err)) {
     LOG_WARN("Failed to make directory: {}, err: {}", dir.c_str(), err.message());
     return;
