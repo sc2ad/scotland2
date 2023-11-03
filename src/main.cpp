@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "_config.h"
 #ifndef LINUX_TEST
 
@@ -51,10 +52,7 @@ void print_decode_loop(uint32_t* val, int n) {
 
 /// @brief undoes a hook at target with the original instructions from trampoline
 void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
-  constexpr static auto trampolineSize = 64;
-  constexpr static auto hookSize = 8;
   constexpr static auto kPageSize = 4096ULL;
-  size_t trampoline_size = trampolineSize;
   auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
 
   FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
@@ -63,16 +61,9 @@ void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
     FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
                    fmt::ptr(page_aligned_target), std::strerror(errno));
   }
-
-  // local target hook to make writing and mprotecting things easier
-  flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
   FLAMINGO_DEBUG("Undoing hook of {} with {} original instructions", fmt::ptr(target),
                  trampoline.original_instructions.size());
-
-  for (auto ins : trampoline.original_instructions) {
-    target_hook.Write(ins);
-  }
-  target_hook.Finish();
+  std::copy_n(trampoline.original_instructions.begin(), trampoline.original_instructions.size(), target);
 
   FLAMINGO_DEBUG("Target decoded after uninstall: {}", fmt::ptr(target));
   print_decode_loop(target, 5);
@@ -80,6 +71,8 @@ void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
 }
 
 void install_load_hook(uint32_t* target) {
+  FLAMINGO_DEBUG("Installing hook at: {}, initial dump:", fmt::ptr(target));
+  print_decode_loop(target, 5);
   // Size of the allocation size for the trampoline in bytes
   constexpr static auto trampolineSize = 64;
   // Size of the function we are hooking in instructions
@@ -89,7 +82,6 @@ void install_load_hook(uint32_t* target) {
   // Mostly throw-away reference
   size_t trampoline_size = trampolineSize;
   FLAMINGO_DEBUG("Hello from flamingo!");
-  static auto trampoline_target = target;
   static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
   // We write fixups for the first 4 instructions in the target
   trampoline.WriteHookFixups(target);
@@ -105,12 +97,13 @@ void install_load_hook(uint32_t* target) {
                    fmt::ptr(page_aligned_target), std::strerror(errno));
   }
   static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
+  static auto target_hook_point = target;
   auto init_hook = [](char const* domain_name) noexcept {
     // Call orig first
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
     reinterpret_cast<void (*)(char const*)>(trampoline.address.data())(domain_name);
 
-    undo_hook(trampoline, trampoline_target);
+    undo_hook(trampoline, target_hook_point);
     modloader::load_early_mods();
   };
   // TODO: mprotect memory again after we are done writing
@@ -287,6 +280,8 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] voi
 #undef RET_NULL_LOG_UNLESS
 
 void install_unity_hook(uint32_t* target) {
+  FLAMINGO_DEBUG("Installing hook at: {}, initial dump:", fmt::ptr(target));
+  print_decode_loop(target, 5);
   // Size of the allocation size for the trampoline in bytes
   constexpr static auto trampolineSize = 64;
   // Size of the function we are hooking in instructions
@@ -315,6 +310,8 @@ void install_unity_hook(uint32_t* target) {
   // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
   // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
   auto unity_hook = [](void* param_1) noexcept {
+    static int called_count = 0;
+    LOG_DEBUG("Call count: {}", called_count++);
     // First param is assumed to be a linked list, stored on the SceneManager.
     // this linked list is iterated over by ClearRoots and all unity objects are destroyed.
     LOG_DEBUG("ClearRoots called with param {}", fmt::ptr(param_1));

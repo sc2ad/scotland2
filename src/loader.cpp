@@ -123,7 +123,6 @@ std::vector<DependencyResult> SharedObject::getToLoad(
   auto sections = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
 
   for (auto const& sectionHeader : sections) {
-    LOG_DEBUG("section header type: {}", sectionHeader.sh_type);
     if (sectionHeader.sh_type != SHT_DYNAMIC) {
       continue;
     }
@@ -164,7 +163,6 @@ std::vector<DependencyResult> SharedObject::getToLoad(
       return dependencies;
     }
     for (auto needed_offset : needed_offsets) {
-      LOG_DEBUG("DT_NEEDED: str offset: {}", needed_offset);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
       std::string_view name = &readAtOffset<char const>(f, strtab_offset + needed_offset);
 
