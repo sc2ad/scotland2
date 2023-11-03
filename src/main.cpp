@@ -31,6 +31,21 @@ bool failed = false;
 using namespace std::literals::string_view_literals;
 constexpr std::string_view libil2cppName = "libil2cpp.so"sv;
 
+void print_decode_loop(uint32_t* val, int n) {
+  auto handle = flamingo::getHandle();
+  for (int i = 0; i < n; i++) {
+    cs_insn* insns = nullptr;
+    auto count = cs_disasm(handle, reinterpret_cast<uint8_t const*>(val), sizeof(uint32_t),
+                           static_cast<uint64_t>(reinterpret_cast<uint64_t>(val)), 1, &insns);
+    if (count == 1) {
+      FLAMINGO_DEBUG("Addr: {} Value: 0x{:x}, {} {}", fmt::ptr(val), *val, insns->mnemonic, insns->op_str);
+    } else {
+      FLAMINGO_DEBUG("Addr: {} Value: 0x{:x}", fmt::ptr(val), *val);
+    }
+    val++;
+  }
+}
+
 /// should flush instruction cache
 #define __flush_cache(c, n) __builtin___clear_cache(reinterpret_cast<char*>(c), reinterpret_cast<char*>(c) + n)
 
@@ -58,6 +73,9 @@ void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
     target_hook.Write(ins);
   }
   target_hook.Finish();
+
+  FLAMINGO_DEBUG("Target decoded after uninstall: {}", fmt::ptr(target));
+  print_decode_loop(target, 5);
   __flush_cache(target, sizeof(uint32_t) * 4);
 }
 
@@ -102,6 +120,10 @@ void install_load_hook(uint32_t* target) {
 
   FLAMINGO_DEBUG("Hook installed! Target: {} (il2cpp_init) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+init_hook), fmt::ptr(trampoline.address.data()));
+  FLAMINGO_DEBUG("Target decoded: {}", fmt::ptr(target));
+  print_decode_loop(target, 5);
+  FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
+  print_decode_loop(trampoline.address.data(), 16);
 }
 
 // credits to https://github.com/ikoz/AndroidSubstrate_hookingC_examples/blob/master/nativeHook3/jni/nativeHook3.cy.cpp
@@ -314,6 +336,11 @@ void install_unity_hook(uint32_t* target) {
   // TODO: mprotect memory again after we are done writing
   FLAMINGO_DEBUG("Hook installed! Target: {} (ClearRoots) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
+
+  FLAMINGO_DEBUG("Target decoded: {}", fmt::ptr(target));
+  print_decode_loop(target, 5);
+  FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
+  print_decode_loop(trampoline.address.data(), 16);
 }
 }  // namespace
 namespace modloader {
