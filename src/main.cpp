@@ -31,6 +31,36 @@ bool failed = false;
 using namespace std::literals::string_view_literals;
 constexpr std::string_view libil2cppName = "libil2cpp.so"sv;
 
+/// should flush instruction cache
+#define __flush_cache(c, n) __builtin___clear_cache(reinterpret_cast<char*>(c), reinterpret_cast<char*>(c) + n)
+
+/// @brief undoes a hook at target with the original instructions from trampoline
+void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
+  constexpr static auto trampolineSize = 64;
+  constexpr static auto hookSize = 8;
+  constexpr static auto kPageSize = 4096ULL;
+  size_t trampoline_size = trampolineSize;
+  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
+
+  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
+  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+    // Log error on mprotect!
+    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
+                   fmt::ptr(page_aligned_target), std::strerror(errno));
+  }
+
+  // local target hook to make writing and mprotecting things easier
+  flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
+  FLAMINGO_DEBUG("Undoing hook of {} with {} original instructions", fmt::ptr(target),
+                 trampoline.original_instructions.size());
+
+  for (auto ins : trampoline.original_instructions) {
+    target_hook.Write(ins);
+  }
+  target_hook.Finish();
+  __flush_cache(target, sizeof(uint32_t) * 4);
+}
+
 void install_load_hook(uint32_t* target) {
   // Size of the allocation size for the trampoline in bytes
   constexpr static auto trampolineSize = 64;
@@ -41,6 +71,7 @@ void install_load_hook(uint32_t* target) {
   // Mostly throw-away reference
   size_t trampoline_size = trampolineSize;
   FLAMINGO_DEBUG("Hello from flamingo!");
+  static auto trampoline_target = target;
   static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
   // We write fixups for the first 4 instructions in the target
   trampoline.WriteHookFixups(target);
@@ -61,6 +92,8 @@ void install_load_hook(uint32_t* target) {
     // Call orig first
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
     reinterpret_cast<void (*)(char const*)>(trampoline.address.data())(domain_name);
+
+    undo_hook(trampoline, trampoline_target);
     modloader::load_early_mods();
   };
   // TODO: mprotect memory again after we are done writing
@@ -241,6 +274,7 @@ void install_unity_hook(uint32_t* target) {
   constexpr static auto kPageSize = 4096ULL;
   // Mostly throw-away reference
   size_t trampoline_size = trampolineSize;
+  static auto trampoline_target = target;
   static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
   // We write fixups for the first 4 instructions in the target
   trampoline.WriteHookFixups(target);
@@ -267,6 +301,7 @@ void install_unity_hook(uint32_t* target) {
 
     // call orig
     reinterpret_cast<void (*)(void*)>(trampoline.address.data())(param_1);
+    undo_hook(trampoline, trampoline_target);
 
     // open mods and call load / late_load on things that require it
     LOG_DEBUG("Opening mods");
