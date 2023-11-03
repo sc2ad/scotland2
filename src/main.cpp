@@ -88,7 +88,6 @@ void install_load_hook(uint32_t* target) {
   }
   static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
   auto init_hook = [](char const* domain_name) noexcept {
-    // TODO: uninstall hook after first call
     // Call orig first
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
     reinterpret_cast<void (*)(char const*)>(trampoline.address.data())(domain_name);
@@ -294,7 +293,6 @@ void install_unity_hook(uint32_t* target) {
   // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
   // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
   auto unity_hook = [](void* param_1) noexcept {
-    // TODO: uninstall hook after first call
     // First param is assumed to be a linked list, stored on the SceneManager.
     // this linked list is iterated over by ClearRoots and all unity objects are destroyed.
     LOG_DEBUG("ClearRoots called with param {}", fmt::ptr(param_1));
