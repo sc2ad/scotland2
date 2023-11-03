@@ -66,6 +66,8 @@ void install_load_hook(uint32_t* target) {
   // TODO: mprotect memory again after we are done writing
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+init_hook));
   target_hook.Finish();
+  __flush_cache(target, sizeof(uint32_t) * 4);
+
   FLAMINGO_DEBUG("Hook installed! Target: {} (il2cpp_init) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+init_hook), fmt::ptr(trampoline.address.data()));
 }
@@ -274,6 +276,8 @@ void install_unity_hook(uint32_t* target) {
   };
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
   target_hook.Finish();
+  __flush_cache(target, sizeof(uint32_t) * 4);
+
   // TODO: mprotect memory again after we are done writing
   FLAMINGO_DEBUG("Hook installed! Target: {} (ClearRoots) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
