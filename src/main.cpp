@@ -70,6 +70,9 @@ void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
   __flush_cache(target, sizeof(uint32_t) * 4);
 }
 
+/// @brief attempts to setup the unity late load hook
+void setup_unity_hook();
+
 void install_load_hook(uint32_t* target) {
   FLAMINGO_DEBUG("Installing hook at: {}, initial dump:", fmt::ptr(target));
   print_decode_loop(target, 5);
@@ -105,6 +108,9 @@ void install_load_hook(uint32_t* target) {
 
     undo_hook(trampoline, target_hook_point);
     modloader::load_early_mods();
+
+    // we do the unity hook after il2cpp init so the icalls are registered
+    setup_unity_hook();
   };
   // TODO: mprotect memory again after we are done writing
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+init_hook));
@@ -117,6 +123,58 @@ void install_load_hook(uint32_t* target) {
   print_decode_loop(target, 5);
   FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
   print_decode_loop(trampoline.address.data(), 16);
+}
+
+void install_unity_hook(uint32_t* target) {
+  // Size of the allocation size for the trampoline in bytes
+  constexpr static auto trampolineSize = 96;
+  // Size of the function we are hooking in instructions
+  constexpr static auto hookSize = 33;
+  // Size of the allocation page to mark as +rwx
+  constexpr static auto kPageSize = 4096ULL;
+  // Mostly throw-away reference
+  size_t trampoline_size = trampolineSize;
+  static auto trampoline_target = target;
+  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
+  // We write fixups for the first 4 instructions in the target
+  trampoline.WriteHookFixups(target);
+  // Then write the jumpback at instruction 5 to continue the code
+  trampoline.WriteCallback(&target[4]);
+  trampoline.Finish();
+  // Ensure target is writable
+  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
+  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
+  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
+    // Log error on mprotect!
+    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
+                   fmt::ptr(page_aligned_target), std::strerror(errno));
+  }
+  static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
+  // we hook ClearRoots which is a method called at the start of StartFirstScene.
+  // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
+  // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
+  auto unity_hook = [](void* param_1, bool param_2) noexcept {
+    // First param is a unity object, second param is some kind of bool
+
+    LOG_DEBUG("DestroyImmediate called with params {} {}", fmt::ptr(param_1), param_2);
+
+    // call orig
+    reinterpret_cast<void (*)(void*, bool)>(trampoline.address.data())(param_1, param_2);
+    undo_hook(trampoline, trampoline_target);
+
+    // open mods and call load / late_load on things that require it
+    LOG_DEBUG("Opening mods");
+    modloader::open_mods(modloader::get_files_dir());
+    LOG_DEBUG("Loading mods");
+    modloader::load_mods();
+  };
+  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
+  target_hook.Finish();
+  __flush_cache(target, sizeof(uint32_t) * 4);
+
+  // TODO: mprotect memory again after we are done writing
+  FLAMINGO_DEBUG("Hook installed! Target: {} (DestroyImmediate) now will call: {} (hook), with trampoline: {}",
+                 fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
 }
 
 // credits to https://github.com/ikoz/AndroidSubstrate_hookingC_examples/blob/master/nativeHook3/jni/nativeHook3.cy.cpp
@@ -171,173 +229,53 @@ uintptr_t baseAddr(char const* soname, void* imagehandle) {
 #define LOG_OFFSET(name, val) LOG_DEBUG(name " found @ offset: {}", fmt::ptr((void*)((uintptr_t)val - unity_base)))
 
 /// @brief attempts to find the ClearRoots method within libunity.so
-uint32_t* find_unity_hook_loc([[maybe_unused]] JNIEnv* env, [[maybe_unused]] void* unityHandle) noexcept {
+uint32_t* find_unity_hook_loc([[maybe_unused]] void* unity_handle, void* il2cpp_handle) noexcept {
   // xref trace
-  // dlsym JNI_OnLoad
-  // 2nd bl to UnityPlayer::RegisterNatives
-  // 2nd pcAddr for the method array -> find nativeRender JNINativeMethod*
-  // 6th bl to UnityPlayerLoop
-  // 2nd tbz to pendingWindow check target
-  // 1st tbz to levelLoaded check target
-  // 1st b.ne to initialized check target
-  // 1st tbz to splashScreen check target
-  // 1st bl to LoadFirstScene
-  // 9th bl to StartFirstScene
-  // 2nd bl to ClearRoots
+  // dlsym il2cpp_resolve_icall
+  // resolve icall for UnityEngine.Object::DestroyImmediate
+  // 2nd bl to Scripting::DestroyObjectFromScriptingImmediate
+  // 1st b to DestroyObjectHighLevel
 
   // for logging purposes
-  auto unity_base = baseAddr((modloader::get_libil2cpp_path().parent_path() / "libunity.so").c_str(), unityHandle);
-
-  // exported symbol of libunity.so
-  auto jni_onload = static_cast<uint32_t*>(dlsym(unityHandle, "JNI_OnLoad"));
-  RET_NULL_LOG_UNLESS(jni_onload);
-  LOG_OFFSET("JNI_OnLoad", jni_onload);
-
-  // registerNatives is something used when interacting with jni from a native binary
-  auto registerNatives = cs::findNthBl<2>(jni_onload);
-  RET_NULL_LOG_UNLESS(registerNatives);
-  LOG_OFFSET("UnityPlayer::RegisterNatives", *registerNatives);
-
-  // an array of native methods registered for the unityplayer
-  auto s_UnityPlayerMethods = cs::getpcaddr<2, 1>(*registerNatives);
-  RET_NULL_LOG_UNLESS(s_UnityPlayerMethods);
-  LOG_OFFSET("s_UnityPlayerMethods", std::get<2>(*s_UnityPlayerMethods));
-
-  // method array ptr
-  JNINativeMethod* meths = reinterpret_cast<JNINativeMethod*>(std::get<2>(*s_UnityPlayerMethods));
-
-  // get the size of the method array
-  auto movSz = cs::getMovzValue<1>(*registerNatives);
-  RET_NULL_LOG_UNLESS(movSz);
-  auto methsz = std::get<1>(*movSz);
-
-  // 0x19 was the size of this array in the unstripped libunity we inject into beat saber.
-  // this is not guaranteed to be the size across every libunty ever,
-  // therefore it not matching is not cause for erroring out of the xref trace
-  if (methsz != 0x19) {
-    LOG_WARN("Method size found was {} (0x{:x}), while 25 (0x19) was expected", methsz, methsz);
-    LOG_DEBUG("Despite wrong method size, lookup will still be attempted, this could crash!");
-  } else {
-    LOG_DEBUG("Found native method array size {} (0x{:x})", methsz, methsz);
+  auto unity_base = baseAddr((modloader::get_libil2cpp_path().parent_path() / "libunity.so").c_str(), unity_handle);
+  auto resolve_icall = reinterpret_cast<void* (*)(char const*)>(dlsym(il2cpp_handle, "il2cpp_resolve_icall"));
+  if (!resolve_icall) {
+    LOG_ERROR("Could not dlsym 'resolve_icall': {}", dlerror());
+    return nullptr;
   }
 
-  // walk the native array until we find nativeRender or until we run out of methods
-  JNINativeMethod* nativeRenderMethod = nullptr;
-  auto mend = meths + methsz;
-  for (auto method = meths; method != mend; method++) {
-    if (strcmp(method->name, "nativeRender") == 0) {
-      nativeRenderMethod = method;
-      break;
-    }
-  }
+  auto destroy_immediate = static_cast<uint32_t*>(resolve_icall("UnityEngine.Object::DestroyImmediate"));
+  RET_NULL_LOG_UNLESS(destroy_immediate);
+  LOG_OFFSET("UnityEngine.Object::DestroyImmediate", destroy_immediate);
 
-  RET_NULL_LOG_UNLESS(nativeRenderMethod);
-  // get the method pointer for nativeRender
-  auto nativeRender = static_cast<uint32_t*>(nativeRenderMethod->fnPtr);
-  LOG_OFFSET("nativeRender", nativeRender);
+  auto scripting_destroy_immediate = cs::findNthBl<2>(destroy_immediate);
+  RET_NULL_LOG_UNLESS(scripting_destroy_immediate);
+  LOG_OFFSET("Scripting::DestroyObjectFromScriptingImmediate", *scripting_destroy_immediate);
 
-  // main player loop
-  auto unityplayerloop = cs::findNthBl<6>(nativeRender);
-  RET_NULL_LOG_UNLESS(unityplayerloop);
-  LOG_OFFSET("UnityPlayerLoop", *unityplayerloop);
-
-  // we want to find LoadFirstScene, we can do this either by finding the 20th or so bl, but this breaks
-  // across different unity versions. A different strategy is to follow a few jumps across labels, and end up at the
-  // right label instead to get the first bl there to get to LoadFirstScene.
-
-  auto pendingWindow = cs::getTbzAddr<2>(*unityplayerloop);
-  RET_NULL_LOG_UNLESS(pendingWindow);
-  LOG_OFFSET("pendingWindow check", std::get<2>(*pendingWindow));
-
-  auto levelLoaded = cs::getTbzAddr<1>(std::get<2>(*pendingWindow));
-  RET_NULL_LOG_UNLESS(levelLoaded);
-  LOG_OFFSET("levelLoaded check", std::get<2>(*levelLoaded));
-
-  auto initialized = cs::getBCondAddr<1, ARM64_CC_NE>(std::get<2>(*levelLoaded));
-  RET_NULL_LOG_UNLESS(initialized);
-  LOG_OFFSET("initialized check", std::get<2>(*initialized));
-
-  auto splashScreen = cs::getTbzAddr<1>(std::get<2>(*initialized));
-  RET_NULL_LOG_UNLESS(splashScreen);
-  LOG_OFFSET("splashScreen check", std::get<2>(*splashScreen));
-
-  auto loadfirstscene = cs::findNthBl<1>(std::get<2>(*splashScreen));
-  RET_NULL_LOG_UNLESS(loadfirstscene);
-  LOG_OFFSET("LoadFirstScene", *loadfirstscene);
-
-  auto startFirstScene = cs::findNthBl<9>(*loadfirstscene);
-  RET_NULL_LOG_UNLESS(startFirstScene);
-  LOG_OFFSET("StartFirstScene", *startFirstScene);
-
-  auto clearRoots = cs::findNthBl<2>(*startFirstScene);
-  RET_NULL_LOG_UNLESS(clearRoots);
-  LOG_OFFSET("ClearRoots", *clearRoots);
-
-  return *clearRoots;
+  auto destroy_object_high_level = cs::findNthB<1, false>(*scripting_destroy_immediate);
+  RET_NULL_LOG_UNLESS(destroy_object_high_level);
+  LOG_OFFSET("DestroyObjectHighLevel", *destroy_object_high_level);
+  return *destroy_object_high_level;
 }
 
 #undef LOG_OFFSET
 #undef RET_NULL_LOG_UNLESS
 
-void install_unity_hook(uint32_t* target) {
-  FLAMINGO_DEBUG("Installing hook at: {}, initial dump:", fmt::ptr(target));
-  print_decode_loop(target, 5);
-  // Size of the allocation size for the trampoline in bytes
-  constexpr static auto trampolineSize = 64;
-  // Size of the function we are hooking in instructions
-  constexpr static auto hookSize = 33;
-  // Size of the allocation page to mark as +rwx
-  constexpr static auto kPageSize = 4096ULL;
-  // Mostly throw-away reference
-  size_t trampoline_size = trampolineSize;
-  static auto trampoline_target = target;
-  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
-  // We write fixups for the first 4 instructions in the target
-  trampoline.WriteHookFixups(target);
-  // Then write the jumpback at instruction 5 to continue the code
-  trampoline.WriteCallback(&target[4]);
-  trampoline.Finish();
-  // Ensure target is writable
-  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
-  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
-  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-    // Log error on mprotect!
-    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
-                   fmt::ptr(page_aligned_target), std::strerror(errno));
+/// @brief attempts to setup the late load hook for unity
+void setup_unity_hook() {
+  // Hook DestroyObjectHighLevel (in libunity) so we can load in mods (aka late mods)
+  // This method is first ran within the load of the first scene, so we are before anything in the scene activated
+  // TODO: should have enough space, but we can double check this too like for il2cpp init
+
+  auto unity_hook_loc = find_unity_hook_loc(modloader_unity_handle, modloader_libil2cpp_handle);
+  if (!unity_hook_loc) {
+    LOG_ERROR(
+        "Could not find unity hook location, "
+        "late_load will not be called for early mods, and mods will not be opened!");
+  } else {
+    LOG_DEBUG("Found DestroyImmediate @ {}", fmt::ptr(unity_hook_loc));
+    install_unity_hook(static_cast<uint32_t*>(unity_hook_loc));
   }
-  static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
-  // we hook ClearRoots which is a method called at the start of StartFirstScene.
-  // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
-  // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
-  auto unity_hook = [](void* param_1) noexcept {
-    static int called_count = 0;
-    LOG_DEBUG("Call count: {}", called_count++);
-    // First param is assumed to be a linked list, stored on the SceneManager.
-    // this linked list is iterated over by ClearRoots and all unity objects are destroyed.
-    LOG_DEBUG("ClearRoots called with param {}", fmt::ptr(param_1));
-
-    // call orig
-    reinterpret_cast<void (*)(void*)>(trampoline.address.data())(param_1);
-    undo_hook(trampoline, trampoline_target);
-
-    // open mods and call load / late_load on things that require it
-    LOG_DEBUG("Opening mods");
-    modloader::open_mods(modloader::get_files_dir());
-    LOG_DEBUG("Loading mods");
-    modloader::load_mods();
-  };
-  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
-  target_hook.Finish();
-  __flush_cache(target, sizeof(uint32_t) * 4);
-
-  // TODO: mprotect memory again after we are done writing
-  FLAMINGO_DEBUG("Hook installed! Target: {} (ClearRoots) now will call: {} (hook), with trampoline: {}",
-                 fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
-
-  FLAMINGO_DEBUG("Target decoded: {}", fmt::ptr(target));
-  print_decode_loop(target, 5);
-  FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
-  print_decode_loop(trampoline.address.data(), 16);
 }
 }  // namespace
 namespace modloader {
@@ -455,19 +393,6 @@ MODLOADER_FUNC void modloader_accept_unity_handle([[maybe_unused]] JNIEnv* env, 
   // Hook il2cpp_init to redirect to us after loading, and load normal mods
   // TODO: We KNOW it has enough space for us, but we could technically double check this too.
   install_load_hook(reinterpret_cast<uint32_t*>(il2cpp_init));
-
-  // Hook ClearRoots (in StartFirstScene) so we can load in mods (aka late mods)
-  // this method is ran to clear all unity objects, after which the first scene is loaded
-  // TODO: should have enough space, but we can double check this too like for il2cpp init
-  auto unity_hook_loc = find_unity_hook_loc(env, unityHandle);
-  if (!unity_hook_loc) {
-    LOG_ERROR(
-        "Could not find unity hook location, "
-        "late_load will not be called for early mods, and mods will not be opened!");
-  } else {
-    LOG_DEBUG("Found ClearRoots @ {}", fmt::ptr(unity_hook_loc));
-    install_unity_hook(static_cast<uint32_t*>(unity_hook_loc));
-  }
 }
 
 MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {
