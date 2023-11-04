@@ -18,7 +18,7 @@ This modloader has several call in points. It performs a topological sort of all
 
 `mods` will be constructed when the libunity.so method `DestroyObjectHighLevel` is called the first time. This method is what destroys unity objects, and it happens that the first destroyed object is within the first scene load call. This is the perfect timing for allowing creation of GameObjects and other unity assets at dlopen time, much like how it would happen on PC. This method is hooked with flamingo through an xref trace from the DestroyImmediate icall for gameobjects, through to the internal method `DestroyObjectHighLevel`. Here early mods get their late_load method called, after which mods will get their late_load method called.
 
-This way of initializing at unity init is inspired by what BSIPA does on pc, where a gameobject is created and destroyed, and when it's OnDestroy happens things are loaded in.
+This way of initializing at unity init is inspired by what BSIPA does on pc, where a gameobject is created and destroyed, and when its OnDestroy happens things are loaded in.
 
 Here is a table containing what gets opened and called when.
  - `dlopen` means the .so file will be opened at that time.
