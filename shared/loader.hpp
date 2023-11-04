@@ -4,6 +4,7 @@
 #include <array>
 #include <deque>
 #include <filesystem>
+#include <new>
 #include <optional>
 #include <span>
 #include <stack>
@@ -149,6 +150,20 @@ struct ModInfo {
     version = other.version;
     versionLong = other.version_long;
   }
+  [[nodiscard]] CModInfo to_c() const {
+    // TODO: Error handle here
+    auto* copy_id = new (std::nothrow) char[id.size() + 1];
+    id.copy(copy_id, id.size());
+    copy_id[id.size()] = '\0';
+    auto* copy_version = new (std::nothrow) char[version.size() + 1];
+    version.copy(copy_version, version.size());
+    copy_version[version.size()] = '\0';
+    return CModInfo{
+      .id = copy_id,
+      .version = copy_version,
+      .version_long = versionLong,
+    };
+  }
 };
 
 struct FailedMod {
@@ -245,6 +260,36 @@ struct LoadedMod {
   [[nodiscard]] std::optional<std::string> close() const noexcept;
 };
 
+/// @brief Represents the type exposed via API calls
+struct MODLOADER_EXPORT ModResult {
+  ModInfo info;
+  std::filesystem::path path;
+  LoadPhase phase;
+
+  // TODO: Consider hiding these optional fields entirely (no user should be able to call them, generally)
+  std::optional<SetupFunc> setupFn;
+  std::optional<LoadFunc> loadFn;
+  std::optional<LateLoadFunc> late_loadFn;
+  std::optional<UnloadFunc> unloadFn;
+
+  void* handle;
+
+  explicit ModResult(LoadedMod const& mod)
+      : info(mod.modInfo),
+        path(mod.object.path),
+        phase(mod.phase),
+        setupFn(mod.setupFn),
+        loadFn(mod.loadFn),
+        late_loadFn(mod.late_loadFn),
+        unloadFn(mod.unloadFn),
+        handle(mod.handle) {}
+  ModResult(ModResult const&) = default;
+  ModResult(ModResult&&) = default;
+  ModResult& operator=(ModResult const&) = default;
+  ModResult& operator=(ModResult&&) = default;
+  ~ModResult() = default;
+};
+
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<DependencyResult const> list);
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::vector<Dependency>&& list);
 
@@ -253,6 +298,11 @@ std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::vector<Dependency>&
 /// @return False if the mod failed to be unloaded in any way, true if it either did not exist or was successfully
 /// unloaded.
 MODLOADER_EXPORT bool force_unload(ModInfo info, MatchType type) noexcept;
+
+/// Gets all loaded objects for a particular phase
+MODLOADER_EXPORT std::vector<ModResult> get_for(LoadPhase phase) noexcept;
+/// Gets all loaded libs, early mods, and mods and returns the ModResult types.
+MODLOADER_EXPORT std::vector<ModResult> get_all() noexcept;
 
 }  // namespace modloader
 

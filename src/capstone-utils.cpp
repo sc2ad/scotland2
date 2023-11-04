@@ -4,14 +4,6 @@
 csh handle;
 bool valid = false;
 
-#ifndef VERSION
-#define VERSION "0.0.0"
-#endif
-
-#ifndef ID
-#define ID "scotland2"
-#endif
-
 namespace cs {
 void __attribute__((constructor)) init_capstone() {
   cs_err e1 = cs_open(CS_ARCH_ARM64, CS_MODE_ARM, &handle);

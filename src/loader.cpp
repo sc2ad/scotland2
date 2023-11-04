@@ -123,7 +123,6 @@ std::vector<DependencyResult> SharedObject::getToLoad(
   auto sections = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
 
   for (auto const& sectionHeader : sections) {
-    LOG_DEBUG("section header type: {}", sectionHeader.sh_type);
     if (sectionHeader.sh_type != SHT_DYNAMIC) {
       continue;
     }
@@ -164,7 +163,6 @@ std::vector<DependencyResult> SharedObject::getToLoad(
       return dependencies;
     }
     for (auto needed_offset : needed_offsets) {
-      LOG_DEBUG("DT_NEEDED: str offset: {}", needed_offset);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
       std::string_view name = &readAtOffset<char const>(f, strtab_offset + needed_offset);
 
@@ -362,6 +360,7 @@ template <typename T>
 std::optional<T> getFunction(void* handle, std::string_view name) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
+  LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
   return ptr ? ptr : static_cast<std::optional<T>>(std::nullopt);
 }
 
@@ -440,7 +439,7 @@ std::vector<LoadResult> loadMods(std::span<SharedObject> mods, std::filesystem::
       continue;
     }
 
-    LOG_DEBUG("Attempting to load (moved) mod: {}", mod.path.c_str());
+    LOG_DEBUG("Attempting to dlopen and setup (moved) mod: {}", mod.path.c_str());
     auto otherResults = loadMod(std::move(mod), dependencyDir, skipLoad, phase);
     LOG_DEBUG("After opening mod, now have: {} opened libraries", otherResults.size());
     std::move(otherResults.begin(), otherResults.end(), std::back_inserter(results));
