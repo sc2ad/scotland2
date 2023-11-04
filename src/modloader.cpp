@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <new>
 #include <variant>
+#include <vector>
 #ifndef LINUX_TEST
 #include <jni.h>
 #include <sys/stat.h>
@@ -203,6 +205,7 @@ void load_early_mods() noexcept {
   // Call load on all early mods
   for (auto& m : loaded_early_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      LOG_DEBUG("Attempting to call load on early mod: {}", loaded_mod->object.path.c_str());
       if (!loaded_mod->load()) {
         // Load call does not exist, but the mod was still loaded
         LOG_INFO("No load function on mod: {}", loaded_mod->object.path.c_str());
@@ -219,9 +222,10 @@ void load_mods() noexcept {
   // call late_load on all early mods
   for (auto& m : loaded_early_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      LOG_DEBUG("Attempting to call late_load on early mod: {}", loaded_mod->object.path.c_str());
       if (!loaded_mod->late_load()) {
         // Late load call does not exist, but the mod was still loaded
-        LOG_INFO("No late_load function on mod: {}", loaded_mod->object.path.c_str());
+        LOG_INFO("No late_load function on early mod: {}", loaded_mod->object.path.c_str());
       }
     } else if (auto* fail = std::get_if<FailedMod>(&m)) {
       LOG_WARN("Skipping load_late call on: {} because it failed to be constructed: {}", fail->object.path.c_str(),
@@ -233,6 +237,7 @@ void load_mods() noexcept {
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
       if (!loaded_mod->late_load()) {
+        LOG_DEBUG("Attempting to call late_load on mod: {}", loaded_mod->object.path.c_str());
         // Load call does not exist, but the mod was still loaded
         LOG_INFO("No late_load function on mod: {}", loaded_mod->object.path.c_str());
       }
@@ -241,6 +246,47 @@ void load_mods() noexcept {
                fail->failure.c_str());
     }
   }
+}
+
+/// Gets all loaded objects for a particular phase
+std::vector<ModResult> get_for(LoadPhase phase) noexcept {
+  std::vector<ModResult> result{};
+  auto callback = [&result](auto const& m) {
+    if (auto const* mod = std::get_if<LoadedMod>(&m)) {
+      result.emplace_back(*mod);
+    }
+  };
+  switch (phase) {
+    case LoadPhase::Libs: {
+      result.reserve(loaded_libs.size());
+      std::for_each(loaded_libs.cbegin(), loaded_libs.cend(), callback);
+    } break;
+    case LoadPhase::EarlyMods: {
+      result.reserve(loaded_early_mods.size());
+      std::for_each(loaded_early_mods.cbegin(), loaded_early_mods.cend(), callback);
+    } break;
+    case LoadPhase::Mods: {
+      result.reserve(loaded_mods.size());
+      std::for_each(loaded_mods.cbegin(), loaded_mods.cend(), callback);
+    } break;
+    default:
+      break;
+  }
+  return result;
+}
+/// Gets all loaded libs, early mods, and mods and returns the ModResult types.
+std::vector<ModResult> get_all() noexcept {
+  std::vector<ModResult> result{};
+  result.reserve(loaded_libs.size() + loaded_early_mods.size() + loaded_mods.size());
+  auto callback = [&result](auto const& m) {
+    if (auto const* mod = std::get_if<LoadedMod>(&m)) {
+      result.emplace_back(*mod);
+    }
+  };
+  std::for_each(loaded_libs.cbegin(), loaded_libs.cend(), callback);
+  std::for_each(loaded_early_mods.cbegin(), loaded_early_mods.cend(), callback);
+  std::for_each(loaded_mods.cbegin(), loaded_mods.cend(), callback);
+  return result;
 }
 
 void close_all() noexcept {
@@ -302,7 +348,7 @@ bool force_unload(ModInfo info, MatchType match_type) noexcept {
   if (result == UnloadResult::kNotFound) {
     result = try_unload(loaded_early_mods, find_match);
   }
-  return result == UnloadResult::kSuccess;
+  return result == UnloadResult::kSuccess || result == UnloadResult::kNotFound;
 }
 
 }  // namespace modloader
@@ -312,6 +358,35 @@ MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type)
   return modloader::force_unload(modloader::ModInfo(info.id != nullptr ? info.id : "",
                                                     info.version != nullptr ? info.version : "", info.version_long),
                                  modloader::from_c_match_type(match_type));
+}
+
+MODLOADER_FUNC CModResults modloader_get_all() {
+  auto results = modloader::get_all();
+  CModResults output{
+    .array = new (std::nothrow) CModResult[results.size()],
+    .size = results.size(),
+  };
+  for (size_t i = 0; i < results.size(); i++) {
+    auto const path = results[i].path.string();
+    auto* copy_path = new (std::nothrow) char[path.size() + 1];
+    path.copy(copy_path, path.size());
+    copy_path[path.size()] = '\0';
+    output.array[i] = CModResult{
+      .info = results[i].info.to_c(),
+      .path = copy_path,
+      .handle = results[i].handle,
+    };
+  }
+  return output;
+}
+/// @brief Frees a CModResults object
+MODLOADER_FUNC void modloader_free_results(CModResults* results) {
+  for (size_t i = 0; i < results->size; i++) {
+    delete[] results->array[i].info.id;
+    delete[] results->array[i].info.version;
+    delete[] results->array[i].path;
+  }
+  delete[] results->array;
 }
 
 #endif

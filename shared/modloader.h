@@ -38,6 +38,17 @@ typedef enum {
   MatchType_IdVersionLong,
 } CMatchType;
 
+typedef struct {
+  CModInfo info;
+  char const* path;
+  void* handle;
+} CModResult;
+
+typedef struct {
+  CModResult* array;
+  size_t size;
+} CModResults;
+
 #ifdef __cplusplus
 }
 #endif
@@ -77,6 +88,10 @@ MODLOADER_FUNC char const* modloader_get_libil2cpp_path();
 // TODO: Make this not work for mods that have no unload method, instead returning a different response
 // TODO: Also make sure we travel up our dependents and unload all of them
 MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type);
+/// @brief Returns an allocated array of CModResults for all successfully loaded objects.
+MODLOADER_FUNC CModResults modloader_get_all();
+/// @brief Frees a CModResults object
+MODLOADER_FUNC void modloader_free_results(CModResults* results);
 // TODO: Add requireMod
 // TODO: More docs on existing
 // TODO: Improve version_long to be more descriptive, potentially 3 or more fields?
