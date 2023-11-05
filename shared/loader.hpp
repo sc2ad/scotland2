@@ -128,6 +128,10 @@ struct ModInfo {
   std::string version{};  // nullable
   size_t versionLong{};
 
+  explicit ModInfo(CModInfo const& modInfo)
+      : id(modInfo.id != nullptr ? modInfo.id : ""),
+        version(modInfo.version != nullptr ? modInfo.version : ""),
+        versionLong(modInfo.version_long) {}
   ModInfo(std::string_view id, std::string_view version, size_t versionLong)
       : id(id), version(version), versionLong(versionLong) {}
 
@@ -192,6 +196,11 @@ struct LoadedMod {
 
   void* handle;
 
+  bool inited = false;
+  bool load_called = false;
+  bool late_load_called = false;
+  bool unloaded = false;
+
   LoadedMod(LoadedMod&&) noexcept = default;
   LoadedMod& operator=(LoadedMod&&) noexcept = default;
   LoadedMod(LoadedMod const&) = delete;
@@ -212,6 +221,10 @@ struct LoadedMod {
   /// @brief Calls the setup function on the mod
   /// @return true if the call exists and was called, false otherwise
   inline bool init() noexcept {
+    if (inited) {
+      return true;
+    }
+
     if (setupFn) {
       // Need to make a CModInfo here to ensure ABI correctness
       CModInfo info{
@@ -222,6 +235,7 @@ struct LoadedMod {
       (*setupFn)(&info);
       // After the call, take the info and write it back
       modInfo.assign(info);
+      inited = true;
       return true;
     }
     return false;
@@ -229,8 +243,13 @@ struct LoadedMod {
   /// @brief Calls the load function on the mod
   /// @return true if the call exists and was called, false otherwise
   inline bool load() noexcept {
+    if (load_called) {
+      return true;
+    }
+
     if (loadFn) {
       (*loadFn)();
+      load_called = true;
       return true;
     }
     return false;
@@ -239,8 +258,13 @@ struct LoadedMod {
   /// @brief Calls the late_load function on the mod
   /// @return true if the call exists and was called, false otherwise
   inline bool late_load() noexcept {
+    if (late_load_called) {
+      return true;
+    }
+
     if (late_loadFn) {
       (*late_loadFn)();
+      late_load_called = true;
       return true;
     }
     return false;
@@ -249,8 +273,12 @@ struct LoadedMod {
   /// @brief Calls the unload function on the mod
   /// @return true if the call exists and was called, false otherwise
   inline bool unload() noexcept {
+    if (unloaded) {
+      return unloaded;
+    }
     if (unloadFn) {
       (*unloadFn)();
+      unloaded = true;
       return true;
     }
     return false;
@@ -288,6 +316,19 @@ struct MODLOADER_EXPORT ModResult {
   ModResult& operator=(ModResult const&) = default;
   ModResult& operator=(ModResult&&) = default;
   ~ModResult() = default;
+
+  CModResult to_c() {
+    auto path_str = this->path.string();
+    auto* copy_path = new (std::nothrow) char[path_str.size() + 1];
+    path_str.copy(copy_path, path_str.size());
+    copy_path[path_str.size()] = '\0';
+
+    return CModResult{
+      .info = info.to_c(),
+      .path = copy_path,
+      .handle = handle,
+    };
+  }
 };
 
 std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::span<DependencyResult const> list);
