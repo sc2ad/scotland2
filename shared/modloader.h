@@ -120,12 +120,9 @@ MODLOADER_FUNC void modloader_free_results(CModResults* results);
 /// @brief Returns an allocated array of CModResults for all successfully loaded objects.
 /// @return LoadResult describing the action
 MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType match_type);
-// TODO: Add requireMod
 // TODO: More docs on existing
 // TODO: Improve version_long to be more descriptive, potentially 3 or more fields?
-// TODO: Add way of fetching all loaded libs, early_mods, mods
 // - CAPI will need more effort here, we need to copy over
 // TODO: Add void** param to setup call, store as userdata in a given mod structure
-// TODO: Add a find mod call akin to force_unload
 
 /*NOLINTEND(modernize-use-using)*/
