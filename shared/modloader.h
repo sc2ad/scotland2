@@ -37,7 +37,7 @@ typedef enum {
   MatchType_IdOnly,
   MatchType_IdVersion,
   MatchType_IdVersionLong,
-  MatchType_ObjectName, // library binary name e.g libsl2.so
+  MatchType_ObjectName,  // library binary name e.g libsl2.so
 } CMatchType;
 typedef enum {
   LoadPhase_None,
@@ -75,12 +75,12 @@ MODLOADER_EXPORT extern void* modloader_libil2cpp_handle;
 /// @brief The captured dlopen-d libunity.so handle
 MODLOADER_EXPORT extern void* modloader_unity_handle;
 /// @brief True if libs have been dlopened
-MODLOADER_EXPORT extern bool libs_loaded;
-/// @brief True if early mods have been called `load`
-MODLOADER_EXPORT extern bool early_mods_loaded;
-/// @brief True if late mods have been `late_loaded`
-MODLOADER_EXPORT extern bool late_mods_loaded;
-/// @brief True if late mods have been `late_loaded`
+MODLOADER_EXPORT extern bool libs_opened;
+/// @brief True if early mods have been opened
+MODLOADER_EXPORT extern bool early_mods_opened;
+/// @brief True if late mods have beenopened
+MODLOADER_EXPORT extern bool late_mods_opened;
+/// @brief Current loading phase being invoked. This is not mutated after the phase is done.
 MODLOADER_EXPORT extern CLoadPhase current_load_phase;
 /// @brief Returns the path of the modloader.
 /// Example output: /data/user/0/com.beatgames.beatsaber/files/libsl2.so

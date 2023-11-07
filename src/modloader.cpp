@@ -20,9 +20,9 @@ MODLOADER_EXPORT void* modloader_libil2cpp_handle;
 MODLOADER_EXPORT void* modloader_unity_handle;
 
 // more useless than a landline
-MODLOADER_EXPORT bool libs_loaded;
-MODLOADER_EXPORT bool early_mods_loaded;
-MODLOADER_EXPORT bool late_mods_loaded;
+MODLOADER_EXPORT bool libs_opened;
+MODLOADER_EXPORT bool early_mods_opened;
+MODLOADER_EXPORT bool late_mods_opened;
 MODLOADER_EXPORT CLoadPhase current_load_phase = CLoadPhase::LoadPhase_None;
 
 namespace {
@@ -171,7 +171,7 @@ void open_libs(std::filesystem::path const& filesDir) noexcept {
                fail->failure.c_str());
     }
   }
-  libs_loaded = true;
+  libs_opened = true;
 }
 
 void open_early_mods(std::filesystem::path const& filesDir) noexcept {
@@ -192,7 +192,7 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
       LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
     }
   }
-  early_mods_loaded = true;
+  early_mods_opened = true;
 }
 
 void open_mods(std::filesystem::path const& filesDir) noexcept {
@@ -212,7 +212,7 @@ void open_mods(std::filesystem::path const& filesDir) noexcept {
       LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
     }
   }
-  late_mods_loaded = true;
+  late_mods_opened = true;
 }
 
 void load_early_mods() noexcept {
