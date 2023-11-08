@@ -78,7 +78,7 @@ MODLOADER_EXPORT extern void* modloader_unity_handle;
 MODLOADER_EXPORT extern bool libs_opened;
 /// @brief True if early mods have been opened
 MODLOADER_EXPORT extern bool early_mods_opened;
-/// @brief True if late mods have beenopened
+/// @brief True if late mods have been opened
 MODLOADER_EXPORT extern bool late_mods_opened;
 /// @brief Current loading phase being invoked. This is not mutated after the phase is done.
 MODLOADER_EXPORT extern CLoadPhase current_load_phase;
