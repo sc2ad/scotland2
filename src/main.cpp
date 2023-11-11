@@ -101,16 +101,17 @@ void install_load_hook(uint32_t* target) {
   }
   static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
   static auto target_hook_point = target;
-  auto init_hook = [](char const* domain_name) noexcept {
+  auto init_hook = [](char const* domain_name) noexcept -> int {
     // Call orig first
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
-    reinterpret_cast<void (*)(char const*)>(trampoline.address.data())(domain_name);
+    auto ret = reinterpret_cast<int (*)(char const*)>(trampoline.address.data())(domain_name);
 
     undo_hook(trampoline, target_hook_point);
     modloader::load_early_mods();
 
     // we do the unity hook after il2cpp init so the icalls are registered
     setup_unity_hook();
+    return ret;
   };
   // TODO: mprotect memory again after we are done writing
   target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+init_hook));
