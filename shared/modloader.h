@@ -1,3 +1,4 @@
+/*NOLINTBEGIN(modernize-use-using)*/
 #pragma once
 
 // Exposed API functions
@@ -36,7 +37,20 @@ typedef enum {
   MatchType_IdOnly,
   MatchType_IdVersion,
   MatchType_IdVersionLong,
+  MatchType_ObjectName,  // library binary name e.g libsl2.so
 } CMatchType;
+typedef enum {
+  LoadPhase_None,
+  LoadPhase_Libs,
+  LoadPhase_EarlyMods,
+  LoadPhase_Mods,
+} CLoadPhase;
+typedef enum {
+  LoadResult_NotFound,
+  LoadResult_Failed,
+  MatchType_Loaded,
+  // LoadResult_AlreadyLoaded, TODO:
+} CLoadResult;
 
 typedef struct {
   CModInfo info;
@@ -60,6 +74,14 @@ MODLOADER_EXPORT extern JavaVM* modloader_jvm;
 MODLOADER_EXPORT extern void* modloader_libil2cpp_handle;
 /// @brief The captured dlopen-d libunity.so handle
 MODLOADER_EXPORT extern void* modloader_unity_handle;
+/// @brief True if libs have been dlopened
+MODLOADER_EXPORT extern bool libs_opened;
+/// @brief True if early mods have been opened
+MODLOADER_EXPORT extern bool early_mods_opened;
+/// @brief True if late mods have been opened
+MODLOADER_EXPORT extern bool late_mods_opened;
+/// @brief Current loading phase being invoked. This is not mutated after the phase is done.
+MODLOADER_EXPORT extern CLoadPhase current_load_phase;
 /// @brief Returns the path of the modloader.
 /// Example output: /data/user/0/com.beatgames.beatsaber/files/libsl2.so
 MODLOADER_FUNC char const* modloader_get_path();
@@ -81,6 +103,9 @@ MODLOADER_FUNC char const* modloader_get_source_path();
 /// @brief Returns the path where libil2cpp.so is located and dlopened from
 /// Example output:
 MODLOADER_FUNC char const* modloader_get_libil2cpp_path();
+/// @brief Finds the mod result for the id
+/// @return CModResult describing the found mod. Handle will be null if not found
+MODLOADER_FUNC CModResult modloader_get_mod(CModInfo* info, CMatchType match_type);
 /// @brief Triggers an unload of the specified mod, which will in turn call the unload() method of it.
 /// It will also be removed from any collections. It is UB if the mod to be unloaded is the currently executing mod.
 /// @return False if the mod failed to be unloaded in any way, true if it either did not exist or was successfully
@@ -92,10 +117,12 @@ MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type)
 MODLOADER_FUNC CModResults modloader_get_all();
 /// @brief Frees a CModResults object
 MODLOADER_FUNC void modloader_free_results(CModResults* results);
-// TODO: Add requireMod
+/// @brief Returns an allocated array of CModResults for all successfully loaded objects.
+/// @return LoadResult describing the action
+MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType match_type);
 // TODO: More docs on existing
 // TODO: Improve version_long to be more descriptive, potentially 3 or more fields?
-// TODO: Add way of fetching all loaded libs, early_mods, mods
 // - CAPI will need more effort here, we need to copy over
 // TODO: Add void** param to setup call, store as userdata in a given mod structure
-// TODO: Add a find mod call akin to force_unload
+
+/*NOLINTEND(modernize-use-using)*/

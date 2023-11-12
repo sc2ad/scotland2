@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <functional>
 #include <new>
+#include <optional>
 #include <variant>
 #include <vector>
 #ifndef LINUX_TEST
@@ -16,6 +18,12 @@
 MODLOADER_EXPORT JavaVM* modloader_jvm;
 MODLOADER_EXPORT void* modloader_libil2cpp_handle;
 MODLOADER_EXPORT void* modloader_unity_handle;
+
+// more useless than a landline
+MODLOADER_EXPORT bool libs_opened;
+MODLOADER_EXPORT bool early_mods_opened;
+MODLOADER_EXPORT bool late_mods_opened;
+MODLOADER_EXPORT CLoadPhase current_load_phase = CLoadPhase::LoadPhase_None;
 
 namespace {
 
@@ -149,6 +157,7 @@ bool copy_all(std::filesystem::path const& filesDir) noexcept {
 }
 
 void open_libs(std::filesystem::path const& filesDir) noexcept {
+  current_load_phase = CLoadPhase::LoadPhase_Libs;
   // Not thread safe: mutates skip_load
   LOG_DEBUG("Opening libs using root: {}", filesDir.c_str());
   auto lib_sos = listAllObjectsInPhase(filesDir, LoadPhase::Libs);
@@ -162,9 +171,11 @@ void open_libs(std::filesystem::path const& filesDir) noexcept {
                fail->failure.c_str());
     }
   }
+  libs_opened = true;
 }
 
 void open_early_mods(std::filesystem::path const& filesDir) noexcept {
+  current_load_phase = CLoadPhase::LoadPhase_EarlyMods;
   // Construct early mods
   // Not thread safe: mutates skip_load, initializes in sequential order
   auto early_mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::EarlyMods);
@@ -181,9 +192,11 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
       LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
     }
   }
+  early_mods_opened = true;
 }
 
 void open_mods(std::filesystem::path const& filesDir) noexcept {
+  current_load_phase = CLoadPhase::LoadPhase_Mods;
   // Construct mods (aka 'late' unity mods), should be happening after unity is inited (first scene loaded)
   auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods);
   loaded_mods = loadMods(mod_sos, filesDir, skip_load, LoadPhase::Mods);
@@ -199,6 +212,7 @@ void open_mods(std::filesystem::path const& filesDir) noexcept {
       LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
     }
   }
+  late_mods_opened = true;
 }
 
 void load_early_mods() noexcept {
@@ -306,7 +320,57 @@ void close_all() noexcept {
   loaded_mods.clear();
 }
 
+std::optional<std::reference_wrapper<LoadedMod>> get_mod(ModInfo info, MatchType match_type) noexcept {
+  LOG_DEBUG("Attempting to force unload: {}", info);
+  // First, see if we have a mod that matches
+  auto find_match = [&info, match_type](LoadResult const& r) -> bool {
+    if (auto const* loaded = std::get_if<LoadedMod>(&r)) {
+      if (loaded->modInfo.equals(info, match_type)) {
+        // Found a match!
+        LOG_DEBUG("Found matching mod info: {} at: {}", loaded->modInfo, loaded->object.path.c_str());
+        return true;
+      }
+    }
+    return false;
+  };
+  // Then, try to unload it
+  // Make a wrapper enum to hold some concepts here
+  enum struct UnloadResult {
+    kNotFound,
+    kFailed,
+    kSuccess,
+  };
+  constexpr static auto try_unload = [](std::vector<LoadResult>& results, auto const& find_match) -> LoadedMod* {
+    auto found = std::find_if(results.begin(), results.end(), find_match);
+    if (found == results.end()) {
+      return nullptr;
+    }
+    if (auto* loaded = std::get_if<LoadedMod>(&*found)) {
+      return loaded;
+    }
+
+    // FailedMod
+    // Remove match from the collection
+    results.erase(found);
+    return nullptr;
+  };
+  // Now search the lists.
+  // Start with the "best" matches first, ex: mods, then try early_mods
+  // libs will never have ANY info
+  auto* result = try_unload(loaded_mods, find_match);
+  if (result == nullptr) {
+    result = try_unload(loaded_early_mods, find_match);
+  }
+  if (result == nullptr) {
+    return std::nullopt;
+  }
+
+  return std::ref(*result);
+}
+
 bool force_unload(ModInfo info, MatchType match_type) noexcept {
+  // TODO: Use modloader::get_mod instead
+
   LOG_DEBUG("Attempting to force unload: {}", info);
   // First, see if we have a mod that matches
   auto find_match = [&info, match_type](LoadResult const& r) -> bool {
@@ -353,11 +417,19 @@ bool force_unload(ModInfo info, MatchType match_type) noexcept {
 
 }  // namespace modloader
 
+MODLOADER_FUNC CModResult modloader_get_mod(CModInfo* info, CMatchType match_type) {
+  auto modResult = modloader::get_mod(modloader::ModInfo(*info), modloader::from_c_match_type(match_type));
+
+  if (!modResult.has_value()) {
+    return {};
+  }
+
+  return modloader::ModResult(modResult.value()).to_c();
+}
+
 // C API loader related interop
 MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type) {
-  return modloader::force_unload(modloader::ModInfo(info.id != nullptr ? info.id : "",
-                                                    info.version != nullptr ? info.version : "", info.version_long),
-                                 modloader::from_c_match_type(match_type));
+  return modloader::force_unload(modloader::ModInfo(info), modloader::from_c_match_type(match_type));
 }
 
 MODLOADER_FUNC CModResults modloader_get_all() {
@@ -387,6 +459,66 @@ MODLOADER_FUNC void modloader_free_results(CModResults* results) {
     delete[] results->array[i].path;
   }
   delete[] results->array;
+}
+
+MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType match_type) {
+  LOG_VERBOSE("Mod {} is being attempted to load!", info->id);
+
+  auto result = modloader::get_mod(modloader::ModInfo(*info), modloader::from_c_match_type(match_type));
+
+  if (!result) {
+    LOG_ERROR("Unable to find {}", info->id);
+    return CLoadResult::LoadResult_NotFound;
+  }
+
+  auto& loadedMod = result.value().get();
+  LOG_VERBOSE("Found mod {}, loading for phase {}", loadedMod.modInfo.id, fmt::underlying(loadedMod.phase));
+
+  switch (loadedMod.phase) {
+    case modloader::LoadPhase::None:
+    case modloader::LoadPhase::Libs:
+      break;
+    case modloader::LoadPhase::EarlyMods:
+      if (!loadedMod.init()) {
+        LOG_ERROR("Unable to init {}", loadedMod.modInfo.id);
+        return CLoadResult::LoadResult_Failed;
+      }
+
+      // if early load
+      if (current_load_phase == CLoadPhase::LoadPhase_EarlyMods) {
+        LOG_VERBOSE("Attempting to load early mod {}!", info->id);
+        if (!loadedMod.load()) {
+          LOG_ERROR("Unable to early load {}", loadedMod.modInfo.id);
+          return CLoadResult::LoadResult_Failed;
+        }
+      }
+      // if late load
+      if (current_load_phase == CLoadPhase::LoadPhase_Mods) {
+        LOG_VERBOSE("Attempting to late load early mod {}!", info->id);
+        if (!loadedMod.late_load()) {
+          LOG_ERROR("Unable to late load {}", loadedMod.modInfo.id);
+          return CLoadResult::LoadResult_Failed;
+        }
+      }
+
+      break;
+    case modloader::LoadPhase::Mods:
+      if (!loadedMod.init()) {
+        LOG_ERROR("Unable to init {}", loadedMod.modInfo.id);
+        return CLoadResult::LoadResult_Failed;
+      }
+
+      // if late load
+      if (current_load_phase == CLoadPhase::LoadPhase_Mods) {
+        LOG_VERBOSE("Attempting to late load late mod {}!", info->id);
+        if (!loadedMod.late_load()) {
+          LOG_ERROR("Unable to late load {}", loadedMod.modInfo.id);
+          return CLoadResult::LoadResult_Failed;
+        }
+      }
+  }
+
+  return CLoadResult::MatchType_Loaded;
 }
 
 #endif
