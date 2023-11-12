@@ -76,16 +76,14 @@ void setup_unity_hook();
 void install_load_hook(uint32_t* target) {
   FLAMINGO_DEBUG("Installing hook at: {}, initial dump:", fmt::ptr(target));
   print_decode_loop(target, 5);
-  // Size of the allocation size for the trampoline in bytes
-  constexpr static auto trampolineSize = 64;
-  // Size of the function we are hooking in instructions
-  constexpr static auto hookSize = 8;
+  // Size of the trampoline allocation we desire in number of instructions
+  constexpr static auto trampolineInstCount = 16;
   // Size of the allocation page to mark as +rwx
   constexpr static auto kPageSize = 4096ULL;
-  // Mostly throw-away reference
-  size_t trampoline_size = trampolineSize;
+  // Trampoline size in bytes as a reference. Support for only one hook
+  size_t trampoline_size = trampolineInstCount * sizeof(uint32_t);
   FLAMINGO_DEBUG("Hello from flamingo!");
-  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
+  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampoline_size);
   // We write fixups for the first 4 instructions in the target
   trampoline.WriteHookFixups(target);
   // Then write the jumpback at instruction 5 to continue the code
@@ -99,7 +97,7 @@ void install_load_hook(uint32_t* target) {
     FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
                    fmt::ptr(page_aligned_target), std::strerror(errno));
   }
-  static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
+  static flamingo::Trampoline target_hook(target, trampolineInstCount, trampoline_size);
   static auto target_hook_point = target;
   auto init_hook = [](char const* domain_name) noexcept -> int {
     // Call orig first
@@ -127,16 +125,14 @@ void install_load_hook(uint32_t* target) {
 }
 
 void install_unity_hook(uint32_t* target) {
-  // Size of the allocation size for the trampoline in bytes
-  constexpr static auto trampolineSize = 96;
-  // Size of the function we are hooking in instructions
-  constexpr static auto hookSize = 33;
+  // Size of the trampoline allocation we desire in number of instructions
+  constexpr static auto trampolineInstCount = 16;
   // Size of the allocation page to mark as +rwx
   constexpr static auto kPageSize = 4096ULL;
-  // Mostly throw-away reference
-  size_t trampoline_size = trampolineSize;
+  // Trampoline size in bytes as a reference. Support for only one hook
+  size_t trampoline_size = trampolineInstCount * sizeof(uint32_t);
   static auto trampoline_target = target;
-  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampolineSize);
+  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampoline_size);
   // We write fixups for the first 4 instructions in the target
   trampoline.WriteHookFixups(target);
   // Then write the jumpback at instruction 5 to continue the code
@@ -150,7 +146,7 @@ void install_unity_hook(uint32_t* target) {
     FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
                    fmt::ptr(page_aligned_target), std::strerror(errno));
   }
-  static flamingo::Trampoline target_hook(target, hookSize, trampoline_size);
+  static flamingo::Trampoline target_hook(target, trampolineInstCount, trampoline_size);
   // we hook ClearRoots which is a method called at the start of StartFirstScene.
   // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
   // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
