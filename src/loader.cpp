@@ -347,6 +347,7 @@ using OpenLibraryResult = std::variant<void*, std::string>;
 
 OpenLibraryResult openLibrary(std::filesystem::path const& path) {
   LOG_DEBUG("Attempting to dlopen: {}", path.c_str());
+  dlerror(); // consume possible previous dlerror
   auto* handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
   if (handle == nullptr) {
     // Error logging (for if symbols cannot be resolved)
@@ -359,7 +360,10 @@ OpenLibraryResult openLibrary(std::filesystem::path const& path) {
 template <typename T>
 std::optional<T> getFunction(void* handle, std::string_view name) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
+  // consume and print error
+  if (!ptr) LOG_WARN("Could not find function with name {}: {}", name, dlerror());
   LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
   return ptr ? ptr : static_cast<std::optional<T>>(std::nullopt);
 }
