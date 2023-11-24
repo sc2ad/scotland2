@@ -40,8 +40,7 @@ namespace elf_utils {
     };
     bdata dat;
     dat.soname = soname;
-    int status = dl_iterate_phdr([] (dl_phdr_info* info, size_t size, void* data) {
-        (void)size;
+    int status = dl_iterate_phdr([] (dl_phdr_info* info, size_t, void* data) {
         bdata* dat = reinterpret_cast<bdata*>(data);
         if (std::string(info->dlpi_name).find(dat->soname) != std::string::npos) {
           dat->base = (uintptr_t)info->dlpi_addr;

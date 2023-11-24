@@ -1,6 +1,7 @@
 #pragma once
 
-#include "linker/linker_namespaces.hpp"
+#include <string>
+#include <vector>
 
 namespace runtime_restriction {
 

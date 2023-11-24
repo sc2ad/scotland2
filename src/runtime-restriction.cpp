@@ -1,6 +1,7 @@
 #include "runtime-restriction.hpp"
 #include "elf-utils.hpp"
 #include "log.h"
+#include "linker/linker_namespaces.hpp"
 
 #include <elf.h>
 #include <fcntl.h>
