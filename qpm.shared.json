@@ -11,6 +11,13 @@
         "overrideSoName": "libsl2.so"
       }
     },
+    "workspace": {
+      "scripts": {
+        "build": [
+          "pwsh ./build.ps1"
+        ]
+      }
+    },
     "dependencies": [
       {
         "id": "fmt",
@@ -36,14 +43,7 @@
           "private": true
         }
       }
-    ],
-    "workspace": {
-      "scripts": {
-        "build": [
-          "pwsh ./build.ps1"
-        ]
-      }
-    }
+    ]
   },
   "restoredDependencies": [
     {

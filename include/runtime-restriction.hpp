@@ -4,8 +4,8 @@
 
 namespace runtime_restriction {
 
-  void init();
+  bool init(std::string_view modloaderFile);
 
-  void add_ld_library_paths(std::vector<std::string>&& paths);
+  bool add_ld_library_paths(std::vector<std::string>&& paths);
 
 }
