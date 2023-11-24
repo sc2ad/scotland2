@@ -348,9 +348,13 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
   dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
   // consume and print error
-  if (!ptr) LOG_WARN("Could not find function with name {}: {}", name, dlerror());
-  LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
-  return ptr ? ptr : static_cast<std::optional<T>>(std::nullopt);
+  if (ptr) {
+    LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
+    return ptr;
+  } else {
+    LOG_WARN("Could not find function with name {}: {}", name.data(), dlerror());
+    return static_cast<std::optional<T>>(std::nullopt);
+  }
 }
 
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
