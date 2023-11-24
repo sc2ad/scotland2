@@ -27,10 +27,18 @@
  * SUCH DAMAGE.
  */
 #pragma once
-#include "linker/linker_common_types.hpp"
 #include <string>
 #include <vector>
 #include <unordered_set>
+
+#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+  TypeName(const TypeName&) = delete;      \
+  void operator=(const TypeName&) = delete
+
+typedef void* soinfo_list_t;
+
+struct soinfo;
+
 struct android_namespace_t;
 struct android_namespace_link_t {
  public:
@@ -104,19 +112,6 @@ struct android_namespace_t {
                             bool allow_all_shared_libs) {
     linked_namespaces_.emplace_back(linked_namespace, std::move(shared_lib_sonames),
                                     allow_all_shared_libs);
-  }
-  void add_soinfo(soinfo* si) {
-    soinfo_list_.push_back(si);
-  }
-  void add_soinfos(const soinfo_list_t& soinfos) {
-    for (auto si : soinfos) {
-      add_soinfo(si);
-    }
-  }
-  void remove_soinfo(soinfo* si) {
-    soinfo_list_.remove_if([&](soinfo* candidate) {
-      return si == candidate;
-    });
   }
   const soinfo_list_t& soinfo_list() const { return soinfo_list_; }
   // For isolated namespaces - checks if the file is on the search path;
