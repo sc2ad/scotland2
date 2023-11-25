@@ -318,8 +318,11 @@ MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const
         ld_paths.push_back(entry.path());
       }
     }
-    runtime_restriction::add_ld_library_paths(std::move(ld_paths));
-    LOG_DEBUG("Added ld_library_paths!");
+    if(runtime_restriction::add_ld_library_paths(std::move(ld_paths))) {
+      LOG_DEBUG("Added ld_library_paths!");
+    } else {
+      LOG_WARN("Failed to add ld_library_paths!");
+    }
   } else {
     LOG_WARN("Failed to add ld_library_paths!");
   }
@@ -372,4 +375,7 @@ MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {
   modloader::close_all();
 }
 
+MODLOADER_FUNC bool modloader_add_ld_library_path(const char* path) {
+  return runtime_restriction::add_ld_library_paths({ path });
+}
 #endif
