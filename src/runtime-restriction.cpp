@@ -5,6 +5,7 @@
 
 #include <elf.h>
 #include <fcntl.h>
+#include <unistd.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unordered_map>
@@ -75,6 +76,13 @@ namespace runtime_restriction {
         return false;
       }
       LOG_DEBUG("get_primary_namespace: {}", fmt::ptr(get_primary_namespace));
+      
+      if (munmap(mapped, size) != 0) {
+        LOG_ERROR("Failed to munmap {}: {}", path, std::strerror(errno));
+      }
+      if (close(fd) != 0) {
+        LOG_ERROR("Failed to close fd for: {}: {}", path, std::strerror(errno));
+      }
 
       for (auto&& [hdl, info] : *g_soinfo_handles_map) {
         if(std::string(get_soname(info)) == modloaderFile) { 
