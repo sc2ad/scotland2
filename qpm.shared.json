@@ -11,6 +11,13 @@
         "overrideSoName": "libsl2.so"
       }
     },
+    "workspace": {
+      "scripts": {
+        "build": [
+          "pwsh ./build.ps1"
+        ]
+      }
+    },
     "dependencies": [
       {
         "id": "fmt",
@@ -36,29 +43,22 @@
           "private": true
         }
       }
-    ],
-    "workspace": {
-      "scripts": {
-        "build": [
-          "pwsh ./build.ps1"
-        ]
-      }
-    }
+    ]
   },
   "restoredDependencies": [
     {
       "dependency": {
         "id": "flamingo",
-        "versionRange": "=0.1.1",
+        "versionRange": "=0.1.2",
         "additionalData": {
-          "soLink": "https://github.com/sc2ad/Flamingo/releases/download/v0.1.1/libflamingo.so",
-          "debugSoLink": "https://github.com/sc2ad/Flamingo/releases/download/v0.1.1/debug_libflamingo.so",
+          "soLink": "https://github.com/sc2ad/Flamingo/releases/download/v0.1.2/libflamingo.so",
+          "debugSoLink": "https://github.com/sc2ad/Flamingo/releases/download/v0.1.2/debug_libflamingo.so",
           "overrideSoName": "libflamingo.so",
-          "modLink": "https://github.com/sc2ad/Flamingo/releases/download/v0.1.1/flamingo.qmod",
-          "branchName": "version/v0_1_1"
+          "modLink": "https://github.com/sc2ad/Flamingo/releases/download/v0.1.2/flamingo.qmod",
+          "branchName": "version/v0_1_2"
         }
       },
-      "version": "0.1.1"
+      "version": "0.1.2"
     },
     {
       "dependency": {

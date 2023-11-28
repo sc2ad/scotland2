@@ -18,6 +18,8 @@
 #include "trampoline-allocator.hpp"
 #include "trampoline.hpp"
 #include "util.hpp"
+#include "elf-utils.hpp"
+#include "runtime-restriction.hpp"
 
 namespace {
 std::string application_id;
@@ -174,49 +176,6 @@ void install_unity_hook(uint32_t* target) {
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
 }
 
-// credits to https://github.com/ikoz/AndroidSubstrate_hookingC_examples/blob/master/nativeHook3/jni/nativeHook3.cy.cpp
-uintptr_t baseAddr(char const* soname, void* imagehandle) {
-  if (soname == NULL) return (uintptr_t)NULL;
-  if (imagehandle == NULL) return (uintptr_t)NULL;
-
-  FILE* f = NULL;
-  char line[200] = { 0 };
-  char* state = NULL;
-  char* tok = NULL;
-  char* baseAddr = NULL;
-  if ((f = fopen("/proc/self/maps", "r")) == NULL) return (uintptr_t)NULL;
-  while (fgets(line, 199, f) != NULL) {
-    tok = strtok_r(line, "-", &state);
-    baseAddr = tok;
-    strtok_r(NULL, "\t ", &state);
-    strtok_r(NULL, "\t ", &state);        // "r-xp" field
-    strtok_r(NULL, "\t ", &state);        // "0000000" field
-    strtok_r(NULL, "\t ", &state);        // "01:02" field
-    strtok_r(NULL, "\t ", &state);        // "133224" field
-    tok = strtok_r(NULL, "\t ", &state);  // path field
-
-    if (tok != NULL) {
-      int i;
-      for (i = (int)strlen(tok) - 1; i >= 0; --i) {
-        if (!(tok[i] == ' ' || tok[i] == '\r' || tok[i] == '\n' || tok[i] == '\t')) break;
-        tok[i] = 0;
-      }
-      {
-        size_t toklen = strlen(tok);
-        size_t solen = strlen(soname);
-        if (toklen > 0) {
-          if (toklen >= solen && strcmp(tok + (toklen - solen), soname) == 0) {
-            fclose(f);
-            return (uintptr_t)strtoll(baseAddr, NULL, 16);
-          }
-        }
-      }
-    }
-  }
-  fclose(f);
-  return (uintptr_t)NULL;
-}
-
 #define RET_NULL_LOG_UNLESS(v)       \
   if (!v) {                          \
     LOG_ERROR("Could not find " #v); \
@@ -234,7 +193,7 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] void* unity_handle, void* il2cpp_
   // 1st b to DestroyObjectHighLevel
 
   // for logging purposes
-  auto unity_base = baseAddr((modloader::get_libil2cpp_path().parent_path() / "libunity.so").c_str(), unity_handle);
+  auto unity_base = elf_utils::baseAddr((modloader::get_libil2cpp_path().parent_path() / "libunity.so").c_str());
   auto resolve_icall = reinterpret_cast<void* (*)(char const*)>(dlsym(il2cpp_handle, "il2cpp_resolve_icall"));
   if (!resolve_icall) {
     LOG_ERROR("Could not dlsym 'resolve_icall': {}", dlerror());
@@ -352,6 +311,21 @@ MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const
     LOG_FATAL("Failed to copy over files! Modloading cannot continue!");
     failed = true;
   }
+  if(runtime_restriction::init(std::filesystem::path(modloaderSource).filename().string())) {
+    std::vector<std::string> ld_paths = { "/vendor/lib64", "/system/lib64", "/system/product/lib64" };
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(files_dir)) {
+      if(entry.is_directory()) {
+        ld_paths.push_back(entry.path());
+      }
+    }
+    if(runtime_restriction::add_ld_library_paths(std::move(ld_paths))) {
+      LOG_DEBUG("Added ld_library_paths!");
+    } else {
+      LOG_WARN("Failed to add ld_library_paths!");
+    }
+  } else {
+    LOG_WARN("Failed to add ld_library_paths!");
+  }
 }
 
 MODLOADER_FUNC void modloader_load([[maybe_unused]] JNIEnv* env, char const* soDir) noexcept {
@@ -401,4 +375,7 @@ MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {
   modloader::close_all();
 }
 
+MODLOADER_FUNC bool modloader_add_ld_library_path(const char* path) {
+  return runtime_restriction::add_ld_library_paths({ path });
+}
 #endif

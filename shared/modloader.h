@@ -120,6 +120,9 @@ MODLOADER_FUNC void modloader_free_results(CModResults* results);
 /// @brief Returns an allocated array of CModResults for all successfully loaded objects.
 /// @return LoadResult describing the action
 MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType match_type);
+/// @brief Adds the path to the LD_LIBRARY_PATH of the modloader/mods namespace
+/// @return If it could add the path or not
+MODLOADER_FUNC bool modloader_add_ld_library_path(const char* path);
 // TODO: More docs on existing
 // TODO: Improve version_long to be more descriptive, potentially 3 or more fields?
 // - CAPI will need more effort here, we need to copy over
