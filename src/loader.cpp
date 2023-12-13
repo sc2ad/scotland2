@@ -3,6 +3,7 @@
 #include "internal-loader.hpp"
 #include "log.h"
 #include "modloader.h"
+#include "elf-utils.hpp"
 
 #include <dlfcn.h>
 #include <elf.h>
@@ -24,25 +25,9 @@
 #include <utility>
 #include <vector>
 
-// NOTE: This is 64 bit specific!
-// For 32 bit support, this file will need to support Elf32_Shdr*, etc.
-namespace {
-template <typename T>
-T& readAtOffset(std::span<uint8_t> f, uint64_t offset) noexcept {
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-  return *reinterpret_cast<T*>(&f[offset]);
-}
-
-template <typename T>
-std::span<T> readManyAtOffset(std::span<uint8_t> f, uint64_t offset, size_t amount, size_t size) noexcept {
-  uint8_t* begin = &readAtOffset<uint8_t>(f, offset);
-  uint8_t* end = begin + (amount * size);
-  return std::span<T>(reinterpret_cast<T*>(begin), reinterpret_cast<T*>(end));
-}
-
-}  // namespace
 namespace modloader {
 
+using namespace elf_utils;
 /// @brief Find and create a SharedObject representing the resolved dependency, if it can be found.
 /// @param dependencyDir The top level directory
 /// @param phase The load phase of the dependency to start the search from
@@ -363,9 +348,13 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
   dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
   // consume and print error
-  if (!ptr) LOG_WARN("Could not find function with name {}: {}", name, dlerror());
-  LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
-  return ptr ? ptr : static_cast<std::optional<T>>(std::nullopt);
+  if (ptr) {
+    LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
+    return ptr;
+  } else {
+    LOG_WARN("Could not find function with name {}: {}", name.data(), dlerror());
+    return static_cast<std::optional<T>>(std::nullopt);
+  }
 }
 
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
