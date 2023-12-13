@@ -245,11 +245,44 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] void* unity_handle, void* il2cpp_
   RET_NULL_LOG_UNLESS(destroy_immediate);
   LOG_OFFSET("UnityEngine.Object::DestroyImmediate", destroy_immediate);
 
-  auto scripting_destroy_immediate = cs::findNthBl<2>(destroy_immediate);
-  RET_NULL_LOG_UNLESS(scripting_destroy_immediate);
-  LOG_OFFSET("Scripting::DestroyObjectFromScriptingImmediate", *scripting_destroy_immediate);
+  // find first ret to find end of method
+  auto end = destroy_immediate + 100;
+  static constexpr auto RET_OP = 0xd65f03c0;
+  uint32_t* destroy_immediate_ret = nullptr;
+  for (auto addr = destroy_immediate; addr != end; addr++) {
+    if (*addr == RET_OP) {
+      destroy_immediate_ret = addr;
+      break;
+    }
+  }
+  RET_NULL_LOG_UNLESS(destroy_immediate_ret);
+  LOG_OFFSET("destroy_immediate_ret", destroy_immediate_ret);
 
-  auto destroy_object_high_level = cs::findNthB<1, false>(*scripting_destroy_immediate);
+  auto rend = destroy_immediate;
+  auto rbegin = destroy_immediate_ret;
+
+  static constexpr int32_t BL_OP = 0b100101;
+  static constexpr int32_t BL_MASK = 0b111111;
+  struct BL {
+    int32_t offset : 26;
+    int32_t op : 6;
+  };
+
+  // then walk backwards from there to find the last bl in the method
+  uint32_t* scripting_destroy_immediate = nullptr;
+  for (auto addr = rbegin; addr != rend; addr--) {
+    auto bl = reinterpret_cast<BL*>(addr);
+
+    if ((bl->op & BL_MASK) == BL_OP) {  // it was a bl
+      // bl->offset should be multiplied by 4 but because addr is a uint32_t* it does that for us
+      scripting_destroy_immediate = addr + bl->offset;
+      break;
+    }
+  }
+  RET_NULL_LOG_UNLESS(scripting_destroy_immediate);
+  LOG_OFFSET("Scripting::DestroyObjectFromScriptingImmediate", scripting_destroy_immediate);
+
+  auto destroy_object_high_level = cs::findNthB<1, false>(scripting_destroy_immediate);
   RET_NULL_LOG_UNLESS(destroy_object_high_level);
   LOG_OFFSET("DestroyObjectHighLevel", *destroy_object_high_level);
   return *destroy_object_high_level;
