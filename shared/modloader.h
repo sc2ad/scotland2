@@ -50,7 +50,12 @@ typedef enum {
   LoadResult_Failed,
   MatchType_Loaded,
   // LoadResult_AlreadyLoaded, TODO:
-} CLoadResult;
+} CLoadResultEnum;
+
+typedef struct {
+  char const* failure;
+  char const* path;
+} CLoadFailed;
 
 typedef struct {
   CModInfo info;
@@ -62,6 +67,20 @@ typedef struct {
   CModResult* array;
   size_t size;
 } CModResults;
+
+typedef struct {
+  CLoadResultEnum result;
+  union {
+    bool not_found;
+    CModResult loaded;
+    CLoadFailed failed;
+  };
+} CLoadResult;
+
+typedef struct {
+  CLoadResult* array;
+  size_t size;
+} CLoadResults;
 
 #ifdef __cplusplus
 }
@@ -114,12 +133,14 @@ MODLOADER_FUNC CModResult modloader_get_mod(CModInfo* info, CMatchType match_typ
 // TODO: Also make sure we travel up our dependents and unload all of them
 MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type);
 /// @brief Returns an allocated array of CModResults for all successfully loaded objects.
-MODLOADER_FUNC CModResults modloader_get_all();
+MODLOADER_FUNC CModResults modloader_get_loaded();
+/// @brief Returns an allocated array of CModResults for all successfully loaded and failed objects.
+MODLOADER_FUNC CLoadResults modloader_get_all();
 /// @brief Frees a CModResults object
 MODLOADER_FUNC void modloader_free_results(CModResults* results);
 /// @brief Returns an allocated array of CModResults for all successfully loaded objects.
 /// @return LoadResult describing the action
-MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType match_type);
+MODLOADER_FUNC CLoadResultEnum modloader_require_mod(CModInfo* info, CMatchType match_type);
 /// @brief Adds the path to the LD_LIBRARY_PATH of the modloader/mods namespace
 /// @return If it could add the path or not
 MODLOADER_FUNC bool modloader_add_ld_library_path(const char* path);
