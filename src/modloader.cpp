@@ -263,8 +263,8 @@ void load_mods() noexcept {
 }
 
 /// Gets all loaded objects for a particular phase
-std::vector<ModResult> get_for(LoadPhase phase) noexcept {
-  std::vector<ModResult> result{};
+std::vector<ModData> get_for(LoadPhase phase) noexcept {
+  std::vector<ModData> result{};
   auto callback = [&result](auto const& m) {
     if (auto const* mod = std::get_if<LoadedMod>(&m)) {
       result.emplace_back(*mod);
@@ -289,13 +289,34 @@ std::vector<ModResult> get_for(LoadPhase phase) noexcept {
   return result;
 }
 /// Gets all loaded libs, early mods, and mods and returns the ModResult types.
-std::vector<ModResult> get_all() noexcept {
-  std::vector<ModResult> result{};
+std::vector<ModData> get_loaded() noexcept {
+  std::vector<ModData> result{};
   result.reserve(loaded_libs.size() + loaded_early_mods.size() + loaded_mods.size());
   auto callback = [&result](auto const& m) {
     if (auto const* mod = std::get_if<LoadedMod>(&m)) {
       result.emplace_back(*mod);
     }
+  };
+  std::for_each(loaded_libs.cbegin(), loaded_libs.cend(), callback);
+  std::for_each(loaded_early_mods.cbegin(), loaded_early_mods.cend(), callback);
+  std::for_each(loaded_mods.cbegin(), loaded_mods.cend(), callback);
+  return result;
+}
+
+/// Gets all loaded libs, early mods, and mods and returns the ModResult types.
+std::vector<ModResult> get_all() noexcept {
+  std::vector<ModResult> result{};
+  result.reserve(loaded_libs.size() + loaded_early_mods.size() + loaded_mods.size());
+  auto callback = [&result](auto const& m) {
+    if (auto const* mod = std::get_if<LoadedMod>(&m)) {
+      auto modData = static_cast<ModData>(*mod);
+      result.emplace_back(std::move(modData));
+      return;
+    }
+
+    auto const& failedMod = std::get<FailedMod>(m);
+    FailedMod copiedFailure{ SharedObject(failedMod.object), failedMod.failure, failedMod.dependencies };
+    result.emplace_back(std::move(copiedFailure));
   };
   std::for_each(loaded_libs.cbegin(), loaded_libs.cend(), callback);
   std::for_each(loaded_early_mods.cbegin(), loaded_early_mods.cend(), callback);
@@ -424,7 +445,7 @@ MODLOADER_FUNC CModResult modloader_get_mod(CModInfo* info, CMatchType match_typ
     return {};
   }
 
-  return modloader::ModResult(modResult.value()).to_c();
+  return modloader::ModData(modResult.value()).to_c();
 }
 
 // C API loader related interop
@@ -432,8 +453,8 @@ MODLOADER_FUNC bool modloader_force_unload(CModInfo info, CMatchType match_type)
   return modloader::force_unload(modloader::ModInfo(info), modloader::from_c_match_type(match_type));
 }
 
-MODLOADER_FUNC CModResults modloader_get_all() {
-  auto results = modloader::get_all();
+MODLOADER_FUNC CModResults modloader_get_loaded() {
+  auto results = modloader::get_loaded();
   CModResults output{
     .array = new (std::nothrow) CModResult[results.size()],
     .size = results.size(),
@@ -451,6 +472,49 @@ MODLOADER_FUNC CModResults modloader_get_all() {
   }
   return output;
 }
+MODLOADER_FUNC CLoadResults modloader_get_all() {
+  auto results = modloader::get_all();
+  CLoadResults output{
+    .array = new (std::nothrow) CLoadResult[results.size()],
+    .size = results.size(),
+  };
+  auto copy_path_to_cstr = [](std::filesystem::path const& path) {
+    auto path_string = path.string();
+    auto* copy_path = new (std::nothrow) char[path_string.size() + 1];
+    path_string.copy(copy_path, path_string.size());
+    copy_path[path_string.size()] = '\0';
+
+    return copy_path;
+  };
+
+  for (size_t i = 0; i < results.size(); i++) {
+    auto result = std::move(results[i]);
+    if (auto const* modData = std::get_if<modloader::ModData>(&result)) {
+      output.array[i] = CLoadResult{
+        .result = CLoadResultEnum::MatchType_Loaded,
+        .loaded =
+            CModResult{
+                .info = modData->info.to_c(),
+                .path = copy_path_to_cstr(modData->path),
+                .handle = modData->handle,
+            },
+      };
+      continue;
+    }
+
+    auto failedMod = std::get<modloader::FailedMod>(std::move(result));
+
+    output.array[i] = CLoadResult{
+      .result = CLoadResultEnum::LoadResult_Failed,
+      .failed =
+          CLoadFailed{
+              .failure = copy_path_to_cstr(failedMod.failure),
+              .path = copy_path_to_cstr(failedMod.object.path),
+          },
+    };
+  }
+  return output;
+}
 /// @brief Frees a CModResults object
 MODLOADER_FUNC void modloader_free_results(CModResults* results) {
   for (size_t i = 0; i < results->size; i++) {
@@ -461,14 +525,14 @@ MODLOADER_FUNC void modloader_free_results(CModResults* results) {
   delete[] results->array;
 }
 
-MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType match_type) {
+MODLOADER_FUNC CLoadResultEnum modloader_require_mod(CModInfo* info, CMatchType match_type) {
   LOG_VERBOSE("Mod {} is being attempted to load!", info->id);
 
   auto result = modloader::get_mod(modloader::ModInfo(*info), modloader::from_c_match_type(match_type));
 
   if (!result) {
     LOG_ERROR("Unable to find {}", info->id);
-    return CLoadResult::LoadResult_NotFound;
+    return CLoadResultEnum::LoadResult_NotFound;
   }
 
   auto& loadedMod = result.value().get();
@@ -481,7 +545,7 @@ MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType matc
     case modloader::LoadPhase::EarlyMods:
       if (!loadedMod.init()) {
         LOG_ERROR("Unable to init {}", loadedMod.modInfo.id);
-        return CLoadResult::LoadResult_Failed;
+        return CLoadResultEnum::LoadResult_Failed;
       }
 
       // if early load
@@ -489,7 +553,7 @@ MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType matc
         LOG_VERBOSE("Attempting to load early mod {}!", info->id);
         if (!loadedMod.load()) {
           LOG_ERROR("Unable to early load {}", loadedMod.modInfo.id);
-          return CLoadResult::LoadResult_Failed;
+          return CLoadResultEnum::LoadResult_Failed;
         }
       }
       // if late load
@@ -497,7 +561,7 @@ MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType matc
         LOG_VERBOSE("Attempting to late load early mod {}!", info->id);
         if (!loadedMod.late_load()) {
           LOG_ERROR("Unable to late load {}", loadedMod.modInfo.id);
-          return CLoadResult::LoadResult_Failed;
+          return CLoadResultEnum::LoadResult_Failed;
         }
       }
 
@@ -505,7 +569,7 @@ MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType matc
     case modloader::LoadPhase::Mods:
       if (!loadedMod.init()) {
         LOG_ERROR("Unable to init {}", loadedMod.modInfo.id);
-        return CLoadResult::LoadResult_Failed;
+        return CLoadResultEnum::LoadResult_Failed;
       }
 
       // if late load
@@ -513,12 +577,12 @@ MODLOADER_FUNC CLoadResult modloader_require_mod(CModInfo* info, CMatchType matc
         LOG_VERBOSE("Attempting to late load late mod {}!", info->id);
         if (!loadedMod.late_load()) {
           LOG_ERROR("Unable to late load {}", loadedMod.modInfo.id);
-          return CLoadResult::LoadResult_Failed;
+          return CLoadResultEnum::LoadResult_Failed;
         }
       }
   }
 
-  return CLoadResult::MatchType_Loaded;
+  return CLoadResultEnum::MatchType_Loaded;
 }
 
 #endif
