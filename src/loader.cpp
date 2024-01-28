@@ -332,11 +332,13 @@ using OpenLibraryResult = std::variant<void*, std::string>;
 
 OpenLibraryResult openLibrary(std::filesystem::path const& path) {
   LOG_DEBUG("Attempting to dlopen: {}", path.c_str());
-  dlerror(); // consume possible previous dlerror
+  dlerror();  // consume possible previous dlerror
+  // TODO: Figure out why symbols are leaking!
   auto* handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
-  if (handle == nullptr) {
+  auto *error = dlerror();
+  if (handle == nullptr || error != nullptr) {
     // Error logging (for if symbols cannot be resolved)
-    return std::string(dlerror());
+    return std::string(error);
   }
 
   return { handle };
@@ -347,14 +349,25 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
+  auto *error = dlerror();
   // consume and print error
-  if (ptr) {
-    LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
-    return ptr;
-  } else {
-    LOG_WARN("Could not find function with name {}: {}", name.data(), dlerror());
+  if (!ptr || error != nullptr) {
+    LOG_WARN("Could not find function with name {}: {}", name.data(), error);
     return static_cast<std::optional<T>>(std::nullopt);
   }
+
+  LOG_DEBUG("Got function from handle {} with name: {}, addr: {}", handle, name.data(), fmt::ptr(ptr));
+
+  Dl_info info;
+  if (dladdr(reinterpret_cast<void* const>(ptr), &info)) {
+    // TODO: Error if not from this handle
+    
+    LOG_DEBUG("The function {} {} is from {} handle {}, ensure matches!", name.data(), fmt::ptr(ptr), info.dli_fname,
+              info.dli_fbase);
+  }
+
+  return ptr;
+
 }
 
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
@@ -371,6 +384,8 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
     }
 
     auto* handle = get<void*>(result);
+
+    LOG_INFO("Using handle {} for {}", handle, obj.path.c_str());
 
     // Default modinfo is full path and v0.0.0, 0
     // The lifetime of the fullpath's c_str() is longer than this ModInfo, since this SharedObject will live forever

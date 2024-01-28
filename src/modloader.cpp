@@ -200,6 +200,14 @@ void open_mods(std::filesystem::path const& filesDir) noexcept {
   // Construct mods (aka 'late' unity mods), should be happening after unity is inited (first scene loaded)
   auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods);
   loaded_mods = loadMods(mod_sos, filesDir, skip_load, LoadPhase::Mods);
+
+  LOG_INFO("Found late mods:");
+  for (auto& m : loaded_mods) {
+    if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      LOG_INFO("{}", loaded_mod->object.path.c_str());
+    }
+  }
+  
   // Call initialize and report errors
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
@@ -233,6 +241,13 @@ void load_early_mods() noexcept {
 
 // calls late_load on mods and early mods
 void load_mods() noexcept {
+  LOG_DEBUG("Early mods to late load:");
+  for (auto const& m : loaded_early_mods) {
+    if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      LOG_DEBUG("{} -> {}", loaded_mod->object.path.c_str(), loaded_mod->modInfo);
+    }
+  }
+
   // call late_load on all early mods
   for (auto& m : loaded_early_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
@@ -248,10 +263,17 @@ void load_mods() noexcept {
   }
 
   // call late_load on all mods
+  LOG_DEBUG("Late mods to late load:");
+  for (auto const& m : loaded_mods) {
+    if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      LOG_DEBUG("{} -> {}", loaded_mod->object.path.c_str(), loaded_mod->modInfo);
+    }
+  }
+
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
+      LOG_DEBUG("Attempting to call late_load on mod: {} {}", loaded_mod->object.path.c_str(), fmt::ptr(loaded_mod->late_loadFn.value_or(nullptr)));
       if (!loaded_mod->late_load()) {
-        LOG_DEBUG("Attempting to call late_load on mod: {}", loaded_mod->object.path.c_str());
         // Load call does not exist, but the mod was still loaded
         LOG_INFO("No late_load function on mod: {}", loaded_mod->object.path.c_str());
       }
