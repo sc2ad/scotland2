@@ -345,7 +345,7 @@ OpenLibraryResult openLibrary(std::filesystem::path const& path) {
 }
 
 template <typename T>
-std::optional<T> getFunction(void* handle, std::string_view name) {
+std::optional<T> getFunction(void* handle, std::string_view name, std::filesystem::path path) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
@@ -360,10 +360,15 @@ std::optional<T> getFunction(void* handle, std::string_view name) {
 
   Dl_info info;
   if (dladdr(reinterpret_cast<void* const>(ptr), &info)) {
-    // TODO: Error if not from this handle
-    
-    LOG_DEBUG("The function {} {} is from {} handle {}, ensure matches!", name.data(), fmt::ptr(ptr), info.dli_fname,
-              info.dli_fbase);
+    auto sourceFilename = path.filename();
+    auto targetFilename = std::filesystem::path(info.dli_fname).filename();
+    if(sourceFilename != targetFilename) {
+      LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), sourceFilename.c_str(), targetFilename.c_str());
+      return static_cast<std::optional<T>>(std::nullopt);
+    }
+  } else {
+    LOG_WARN("Could find shared library for function {} {}", name.data(), fmt::ptr(ptr));
+    return static_cast<std::optional<T>>(std::nullopt);
   }
 
   return ptr;
@@ -391,10 +396,10 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
     // The lifetime of the fullpath's c_str() is longer than this ModInfo, since this SharedObject will live forever
     ModInfo modInfo(obj.path.c_str(), "0.0.0", 0);
 
-    auto setupFn = getFunction<SetupFunc>(handle, "setup");
-    auto loadFn = getFunction<LoadFunc>(handle, "load");
-    auto late_loadFn = getFunction<LateLoadFunc>(handle, "late_load");
-    auto unloadFn = getFunction<UnloadFunc>(handle, "unload");
+    auto setupFn = getFunction<SetupFunc>(handle, "setup", obj.path);
+    auto loadFn = getFunction<LoadFunc>(handle, "load", obj.path);
+    auto late_loadFn = getFunction<LateLoadFunc>(handle, "late_load", obj.path);
+    auto unloadFn = getFunction<UnloadFunc>(handle, "unload", obj.path);
 
     return LoadedMod(modInfo, std::move(obj), phase, setupFn, loadFn, late_loadFn, unloadFn, handle);
   };
