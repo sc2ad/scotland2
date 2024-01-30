@@ -353,7 +353,7 @@ std::optional<T> getFunction(void* handle, std::string_view name, std::filesyste
   // consume and print error
   if (!ptr || error != nullptr) {
     LOG_WARN("Could not find function with name {}: {}", name.data(), error);
-    return static_cast<std::optional<T>>(std::nullopt);
+    return std::nullopt;
   }
 
   LOG_DEBUG("Got function from handle {} with name: {}, addr: {}", handle, name.data(), fmt::ptr(ptr));
@@ -364,11 +364,11 @@ std::optional<T> getFunction(void* handle, std::string_view name, std::filesyste
     auto targetFilename = std::filesystem::path(info.dli_fname).filename();
     if(sourceFilename != targetFilename) {
       LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), sourceFilename.c_str(), targetFilename.c_str());
-      return static_cast<std::optional<T>>(std::nullopt);
+      return std::nullopt;
     }
   } else {
-    LOG_WARN("Could find shared library for function {} {}", name.data(), fmt::ptr(ptr));
-    return static_cast<std::optional<T>>(std::nullopt);
+    LOG_WARN("Could not find shared library for function {} {}", name.data(), fmt::ptr(ptr));
+    return std::nullopt;
   }
 
   return ptr;
