@@ -345,7 +345,7 @@ OpenLibraryResult openLibrary(std::filesystem::path const& path) {
 }
 
 template <typename T>
-std::optional<T> getFunction(void* handle, std::string_view name, std::filesystem::path path) {
+std::optional<T> getFunction(void* handle, std::string_view name, std::filesystem::path const& path) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
