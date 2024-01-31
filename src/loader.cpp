@@ -360,10 +360,10 @@ std::optional<T> getFunction(void* handle, std::string_view name, std::filesyste
 
   Dl_info info;
   if (dladdr(reinterpret_cast<void* const>(ptr), &info)) {
-    auto sourceFilename = path.filename();
-    auto targetFilename = std::filesystem::path(info.dli_fname).filename();
-    if(sourceFilename != targetFilename) {
-      LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), sourceFilename.c_str(), targetFilename.c_str());
+    auto expectedObjName = path.filename();
+    auto addrObjName = std::filesystem::path(info.dli_fname).filename();
+    if(addrObjName != expectedObjName) {
+      LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), addrObjName.c_str(), expectedObjName.c_str());
       return std::nullopt;
     }
   } else {
