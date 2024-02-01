@@ -361,8 +361,11 @@ std::optional<T> getFunction(void* handle, std::string_view name, std::filesyste
   Dl_info info;
   if (dladdr(reinterpret_cast<void* const>(ptr), &info)) {
     auto expectedObjName = path.filename();
-    auto addrObjName = std::filesystem::path(info.dli_fname).filename();
-    if(addrObjName != expectedObjName) {
+    auto expectedObjParent = path.parent_path().filename();
+    auto addrObjPath = std::filesystem::path(info.dli_fname);
+    auto addrObjName = addrObjPath.filename();
+    auto addrObjParent = addrObjPath.parent_path().filename();
+    if(addrObjParent != expectedObjParent || addrObjName != expectedObjName) {
       LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), addrObjName.c_str(), expectedObjName.c_str());
       return std::nullopt;
     }
