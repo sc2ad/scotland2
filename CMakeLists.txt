@@ -33,7 +33,7 @@ set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # compile options used
-add_compile_options(-fPIE -flto -fPIC -fno-exceptions -fno-rtti -fvisibility=hidden)
+add_compile_options(-fPIE -flto -fPIC -fno-rtti -fvisibility=hidden -Os -O2)
 add_compile_definitions(MOD_VERSION=\"${MOD_VERSION}\")
 add_compile_definitions(MOD_ID=\"${MOD_ID}\")
 # Ensure we don't create any references through flamingo
