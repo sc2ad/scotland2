@@ -13,7 +13,7 @@
 
 namespace modloader {
 
-using LoadResult = std::variant<std::monostate, FailedMod, LoadedMod>;
+
 static_assert(std::is_move_assignable_v<LoadResult> && std::is_move_constructible_v<LoadResult>, "");
 
 std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase);

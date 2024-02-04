@@ -12,7 +12,7 @@ namespace elf_utils {
     auto sections = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
     Elf64_Shdr symtab, strtab;
     symtab.sh_addr = 0;
-    symtab.sh_addr = 0;
+    strtab.sh_addr = 0;
     for (auto const& sectionHeader : sections) {
       if (sectionHeader.sh_type == SHT_SYMTAB) {
         symtab = sectionHeader;

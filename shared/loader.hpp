@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "constexpr-map.hpp"
+#include "loader.hpp"
 #include "modloader.h"
 
 // Make fmt an optional dependency, we will just improve debugging facilities if it is defined
@@ -51,6 +52,13 @@ using MissingDependency = SharedObject;
 using DependencyResult = std::variant<MissingDependency, Dependency>;
 
 struct ModInfo;
+
+struct FailedMod;
+struct LoadedMod;
+struct ModData;
+
+using LoadResult = std::variant<std::monostate, FailedMod, LoadedMod>;
+using ModResult = std::variant<std::monostate, FailedMod, ModData>;
 
 using SetupFunc = void (*)(CModInfo* modInfo) noexcept;
 using LoadFunc = void (*)() noexcept;
@@ -289,7 +297,7 @@ struct LoadedMod {
 };
 
 /// @brief Represents the type exposed via API calls
-struct MODLOADER_EXPORT ModResult {
+struct MODLOADER_EXPORT ModData {
   ModInfo info;
   std::filesystem::path path;
   LoadPhase phase;
@@ -302,7 +310,7 @@ struct MODLOADER_EXPORT ModResult {
 
   void* handle;
 
-  explicit ModResult(LoadedMod const& mod)
+  explicit ModData(LoadedMod const& mod)
       : info(mod.modInfo),
         path(mod.object.path),
         phase(mod.phase),
@@ -311,11 +319,11 @@ struct MODLOADER_EXPORT ModResult {
         late_loadFn(mod.late_loadFn),
         unloadFn(mod.unloadFn),
         handle(mod.handle) {}
-  ModResult(ModResult const&) = default;
-  ModResult(ModResult&&) = default;
-  ModResult& operator=(ModResult const&) = default;
-  ModResult& operator=(ModResult&&) = default;
-  ~ModResult() = default;
+  ModData(ModData const&) = default;
+  ModData(ModData&&) = default;
+  ModData& operator=(ModData const&) = default;
+  ModData& operator=(ModData&&) = default;
+  ~ModData() = default;
 
   CModResult to_c() {
     auto path_str = this->path.string();
@@ -341,7 +349,9 @@ std::deque<Dependency> MODLOADER_EXPORT topologicalSort(std::vector<Dependency>&
 MODLOADER_EXPORT bool force_unload(ModInfo info, MatchType type) noexcept;
 
 /// Gets all loaded objects for a particular phase
-MODLOADER_EXPORT std::vector<ModResult> get_for(LoadPhase phase) noexcept;
+MODLOADER_EXPORT std::vector<ModData> get_for(LoadPhase phase) noexcept;
+/// Gets all loaded libs, early mods, and mods and returns the ModResult types.
+MODLOADER_EXPORT std::vector<ModData> get_loaded() noexcept;
 /// Gets all loaded libs, early mods, and mods and returns the ModResult types.
 MODLOADER_EXPORT std::vector<ModResult> get_all() noexcept;
 

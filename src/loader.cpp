@@ -332,29 +332,50 @@ using OpenLibraryResult = std::variant<void*, std::string>;
 
 OpenLibraryResult openLibrary(std::filesystem::path const& path) {
   LOG_DEBUG("Attempting to dlopen: {}", path.c_str());
-  dlerror(); // consume possible previous dlerror
+  dlerror();  // consume possible previous dlerror
+  // TODO: Figure out why symbols are leaking!
   auto* handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
-  if (handle == nullptr) {
+  auto *error = dlerror();
+  if (handle == nullptr || error != nullptr) {
     // Error logging (for if symbols cannot be resolved)
-    return std::string(dlerror());
+    return std::string(error);
   }
 
   return { handle };
 }
 
 template <typename T>
-std::optional<T> getFunction(void* handle, std::string_view name) {
+std::optional<T> getFunction(void* handle, std::string_view name, std::filesystem::path const& path) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
+  auto *error = dlerror();
   // consume and print error
-  if (ptr) {
-    LOG_DEBUG("Got function with name: {}, addr: {}", name.data(), fmt::ptr(ptr));
-    return ptr;
-  } else {
-    LOG_WARN("Could not find function with name {}: {}", name.data(), dlerror());
-    return static_cast<std::optional<T>>(std::nullopt);
+  if (!ptr || error != nullptr) {
+    LOG_WARN("Could not find function with name {}: {}", name.data(), error);
+    return std::nullopt;
   }
+
+  LOG_DEBUG("Got function from handle {} with name: {}, addr: {}", handle, name.data(), fmt::ptr(ptr));
+
+  Dl_info info;
+  if (dladdr(reinterpret_cast<void* const>(ptr), &info)) {
+    auto expectedObjName = path.filename();
+    auto expectedObjParent = path.parent_path().filename();
+    auto addrObjPath = std::filesystem::path(info.dli_fname);
+    auto addrObjName = addrObjPath.filename();
+    auto addrObjParent = addrObjPath.parent_path().filename();
+    if(addrObjParent != expectedObjParent || addrObjName != expectedObjName) {
+      LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), addrObjName.c_str(), expectedObjName.c_str());
+      return std::nullopt;
+    }
+  } else {
+    LOG_WARN("Could not find shared library for function {} {}", name.data(), fmt::ptr(ptr));
+    return std::nullopt;
+  }
+
+  return ptr;
+
 }
 
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
@@ -372,14 +393,16 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
 
     auto* handle = get<void*>(result);
 
+    LOG_INFO("Using handle {} for {}", handle, obj.path.c_str());
+
     // Default modinfo is full path and v0.0.0, 0
     // The lifetime of the fullpath's c_str() is longer than this ModInfo, since this SharedObject will live forever
     ModInfo modInfo(obj.path.c_str(), "0.0.0", 0);
 
-    auto setupFn = getFunction<SetupFunc>(handle, "setup");
-    auto loadFn = getFunction<LoadFunc>(handle, "load");
-    auto late_loadFn = getFunction<LateLoadFunc>(handle, "late_load");
-    auto unloadFn = getFunction<UnloadFunc>(handle, "unload");
+    auto setupFn = getFunction<SetupFunc>(handle, "setup", obj.path);
+    auto loadFn = getFunction<LoadFunc>(handle, "load", obj.path);
+    auto late_loadFn = getFunction<LateLoadFunc>(handle, "late_load", obj.path);
+    auto unloadFn = getFunction<UnloadFunc>(handle, "unload", obj.path);
 
     return LoadedMod(modInfo, std::move(obj), phase, setupFn, loadFn, late_loadFn, unloadFn, handle);
   };
