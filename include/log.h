@@ -13,7 +13,7 @@
 #include <fmt/compile.h>
 #include <fmt/core.h>
 
-#define SL2_LOG(lvl, str, ...)                                                     \
+#define SL2_LOG(lvl, str, ...)                                                  \
   do {                                                                          \
     std::string __ss = fmt::format(FMT_COMPILE(str) __VA_OPT__(, __VA_ARGS__)); \
     __android_log_write(lvl, MOD_ID "|v" MOD_VERSION, __ss.c_str());            \
@@ -30,7 +30,8 @@
 #include <fmt/compile.h>
 #include <fmt/core.h>
 
-#define SL2_LOG(lvl, str, ...) fmt::print(FMT_COMPILE(MOD_ID "|v" MOD_VERSION str ": {}: "), lvl __VA_OPT__(, __VA_ARGS__))
+#define SL2_LOG(lvl, str, ...) \
+  fmt::print(FMT_COMPILE(MOD_ID "|v" MOD_VERSION str ": {}: "), lvl __VA_OPT__(, __VA_ARGS__))
 
 #define LOG_VERBOSE(...) SL2_LOG("VERBOSE", __VA_ARGS__)
 #define LOG_DEBUG(...) SL2_LOG("DEBUG", __VA_ARGS__)

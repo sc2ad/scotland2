@@ -143,7 +143,7 @@ MODLOADER_FUNC void modloader_free_results(CModResults* results);
 MODLOADER_FUNC CLoadResultEnum modloader_require_mod(CModInfo* info, CMatchType match_type);
 /// @brief Adds the path to the LD_LIBRARY_PATH of the modloader/mods namespace
 /// @return If it could add the path or not
-MODLOADER_FUNC bool modloader_add_ld_library_path(const char* path);
+MODLOADER_FUNC bool modloader_add_ld_library_path(char const* path);
 // TODO: More docs on existing
 // TODO: Improve version_long to be more descriptive, potentially 3 or more fields?
 // - CAPI will need more effort here, we need to copy over

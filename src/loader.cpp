@@ -1,9 +1,9 @@
 #include "loader.hpp"
 #include "constexpr-map.hpp"
+#include "elf-utils.hpp"
 #include "internal-loader.hpp"
 #include "log.h"
 #include "modloader.h"
-#include "elf-utils.hpp"
 
 #include <dlfcn.h>
 #include <elf.h>
@@ -129,7 +129,8 @@ std::vector<DependencyResult> SharedObject::getToLoad(
             "End of dynamic section. Counted a total of: {} dynamic entries, of which {} were needed dependencies",
             dynamic_count, needed_offsets.size());
         break;
-      } else if (dyn.d_tag == DT_NEEDED) {
+      }
+      if (dyn.d_tag == DT_NEEDED) {
         LOG_DEBUG("Found DT_NEEDED entry: {} with string table offset: {}", dynamic_count - 1, dyn.d_un.d_val);
         needed_offsets.push_back(dyn.d_un.d_val);
       } else if (dyn.d_tag == DT_STRTAB) {
@@ -272,13 +273,13 @@ std::deque<Dependency> topologicalSort(std::span<DependencyResult const> list) {
 }
 
 // Moves FROM list
-std::deque<Dependency> topologicalSort(std::vector<Dependency>&& deps) {
+std::deque<Dependency> topologicalSort(std::vector<Dependency>&& list) {
   std::deque<Dependency> dependencies{};
   std::unordered_set<std::string_view> visited{};
 
-  sortDependencies(deps);
+  sortDependencies(list);
 
-  for (Dependency& dep : deps) {
+  for (Dependency& dep : list) {
     topologicalSortRecurse(dep, dependencies, visited);
   }
 
@@ -332,13 +333,13 @@ using OpenLibraryResult = std::variant<void*, std::string>;
 
 OpenLibraryResult openLibrary(std::filesystem::path const& path) {
   LOG_DEBUG("Attempting to dlopen: {}", path.c_str());
-  dlerror();  // consume possible previous dlerror
+  dlerror();  // consume possible previous error
   // TODO: Figure out why symbols are leaking!
   auto* handle = dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
-  auto *error = dlerror();
+  auto* error = dlerror();
   if (handle == nullptr || error != nullptr) {
     // Error logging (for if symbols cannot be resolved)
-    return std::string(error);
+    return std::string(error != nullptr ? error : "null handle no error");
   }
 
   return { handle };
@@ -346,27 +347,30 @@ OpenLibraryResult openLibrary(std::filesystem::path const& path) {
 
 template <typename T>
 std::optional<T> getFunction(void* handle, std::string_view name, std::filesystem::path const& path) {
+  dlerror();  // consume possible previous error
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-  dlerror(); // consume possible previous error
   auto ptr = reinterpret_cast<T>(dlsym(handle, name.data()));
-  auto *error = dlerror();
+  auto* error = dlerror();
   // consume and print error
   if (!ptr || error != nullptr) {
-    LOG_WARN("Could not find function with name {}: {}", name.data(), error);
+    LOG_WARN("Could not find function with name {}: {}", name.data(),
+             error != nullptr ? error : "null pointer no error");
     return std::nullopt;
   }
 
   LOG_DEBUG("Got function from handle {} with name: {}, addr: {}", handle, name.data(), fmt::ptr(ptr));
 
   Dl_info info;
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   if (dladdr(reinterpret_cast<void* const>(ptr), &info)) {
     auto expectedObjName = path.filename();
     auto expectedObjParent = path.parent_path().filename();
     auto addrObjPath = std::filesystem::path(info.dli_fname);
     auto addrObjName = addrObjPath.filename();
     auto addrObjParent = addrObjPath.parent_path().filename();
-    if(addrObjParent != expectedObjParent || addrObjName != expectedObjName) {
-      LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), addrObjName.c_str(), expectedObjName.c_str());
+    if (addrObjParent != expectedObjParent || addrObjName != expectedObjName) {
+      LOG_WARN("The function {} {} is from {} but should be from {}!", name.data(), fmt::ptr(ptr), addrObjName.c_str(),
+               expectedObjName.c_str());
       return std::nullopt;
     }
   } else {
@@ -375,7 +379,6 @@ std::optional<T> getFunction(void* handle, std::string_view name, std::filesyste
   }
 
   return ptr;
-
 }
 
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,

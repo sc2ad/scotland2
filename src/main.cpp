@@ -15,11 +15,11 @@
 #include "protect.hpp"
 
 #include "capstone-utils.hpp"
+#include "elf-utils.hpp"
+#include "runtime-restriction.hpp"
 #include "trampoline-allocator.hpp"
 #include "trampoline.hpp"
 #include "util.hpp"
-#include "elf-utils.hpp"
-#include "runtime-restriction.hpp"
 
 namespace {
 std::string application_id;
@@ -257,7 +257,7 @@ void setup_unity_hook() {
   // TODO: should have enough space, but we can double check this too like for il2cpp init
 
   auto unity_hook_loc = find_unity_hook_loc(modloader_unity_handle, modloader_libil2cpp_handle);
-  if (!unity_hook_loc) {
+  if (unity_hook_loc == nullptr) {
     LOG_ERROR(
         "Could not find unity hook location, "
         "late_load will not be called for early mods, and mods will not be opened!");
@@ -344,14 +344,14 @@ MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const
     LOG_FATAL("Failed to copy over files! Modloading cannot continue!");
     failed = true;
   }
-  if(runtime_restriction::init(std::filesystem::path(modloaderSource).filename().string())) {
+  if (runtime_restriction::init(std::filesystem::path(modloaderSource).filename().string())) {
     std::vector<std::string> ld_paths = { "/vendor/lib64", "/system/lib64", "/system/product/lib64" };
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(files_dir)) {
-      if(entry.is_directory()) {
+    for (auto const& entry : std::filesystem::recursive_directory_iterator(files_dir)) {
+      if (entry.is_directory()) {
         ld_paths.push_back(entry.path());
       }
     }
-    if(runtime_restriction::add_ld_library_paths(std::move(ld_paths))) {
+    if (runtime_restriction::add_ld_library_paths(std::move(ld_paths))) {
       LOG_DEBUG("Added ld_library_paths!");
     } else {
       LOG_WARN("Failed to add ld_library_paths!");
@@ -408,7 +408,7 @@ MODLOADER_FUNC void modloader_unload([[maybe_unused]] JavaVM* vm) noexcept {
   modloader::close_all();
 }
 
-MODLOADER_FUNC bool modloader_add_ld_library_path(const char* path) {
+MODLOADER_FUNC bool modloader_add_ld_library_path(char const* path) {
   return runtime_restriction::add_ld_library_paths({ path });
 }
 #endif
