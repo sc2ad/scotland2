@@ -167,13 +167,18 @@ void install_unity_hook(uint32_t* target) {
     LOG_DEBUG("Loading mods");
     modloader::load_mods();
   };
-  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
+  // STOPGAP: Always write ldr + br + data because fixups are done incorrectly when we have a near branch
+  target_hook.WriteLdrBrData(reinterpret_cast<uint32_t*>(+unity_hook));
   target_hook.Finish();
   __flush_cache(target, sizeof(uint32_t) * 4);
 
   // TODO: mprotect memory again after we are done writing
   FLAMINGO_DEBUG("Hook installed! Target: {} (DestroyImmediate) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
+  FLAMINGO_DEBUG("Target decoded: {}", fmt::ptr(target));
+  print_decode_loop(target, 5);
+  FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
+  print_decode_loop(trampoline.address.data(), 16);
 }
 
 #define RET_NULL_LOG_UNLESS(v)       \
