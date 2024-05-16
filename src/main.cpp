@@ -349,21 +349,8 @@ MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const
     LOG_FATAL("Failed to copy over files! Modloading cannot continue!");
     failed = true;
   }
-  if (runtime_restriction::init(std::filesystem::path(modloaderSource).filename().string())) {
-    std::vector<std::string> ld_paths = { "/vendor/lib64", "/system/lib64", "/system/product/lib64" };
-    for (auto const& entry : std::filesystem::recursive_directory_iterator(files_dir)) {
-      if (entry.is_directory()) {
-        ld_paths.push_back(entry.path());
-      }
-    }
-    if (runtime_restriction::add_ld_library_paths(std::move(ld_paths))) {
-      LOG_DEBUG("Added ld_library_paths!");
-    } else {
-      LOG_WARN("Failed to add ld_library_paths!");
-    }
-  } else {
-    LOG_WARN("Failed to add ld_library_paths!");
-  }
+  // TODO: LINKER LIB PATH RESOLUTION SKIPPED
+  LOG_WARN("SKIPPING LIB PATHS AND RT INITS");
 }
 
 MODLOADER_FUNC void modloader_load([[maybe_unused]] JNIEnv* env, char const* soDir) noexcept {
