@@ -290,8 +290,10 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
   std::error_code error_code;
   // Note: We see through this iteration at compile time
   for (auto const& [ph, path] : loadPhaseMap.arr) {
-    if (ph != phase) continue;
-
+    if (ph != phase) {
+      continue;
+    }
+    
     std::vector<SharedObject> objects{};
 
     auto dir = dependencyDir / path;
