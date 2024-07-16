@@ -167,13 +167,18 @@ void install_unity_hook(uint32_t* target) {
     LOG_DEBUG("Loading mods");
     modloader::load_mods();
   };
-  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
+  // STOPGAP: Always write ldr + br + data because fixups are done incorrectly when we have a near branch
+  target_hook.WriteLdrBrData(reinterpret_cast<uint32_t*>(+unity_hook));
   target_hook.Finish();
   __flush_cache(target, sizeof(uint32_t) * 4);
 
   // TODO: mprotect memory again after we are done writing
   FLAMINGO_DEBUG("Hook installed! Target: {} (DestroyImmediate) now will call: {} (hook), with trampoline: {}",
                  fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
+  FLAMINGO_DEBUG("Target decoded: {}", fmt::ptr(target));
+  print_decode_loop(target, 5);
+  FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
+  print_decode_loop(trampoline.address.data(), 16);
 }
 
 #define RET_NULL_LOG_UNLESS(v)       \
@@ -344,21 +349,8 @@ MODLOADER_FUNC void modloader_preload(JNIEnv* env, char const* appId, char const
     LOG_FATAL("Failed to copy over files! Modloading cannot continue!");
     failed = true;
   }
-  if (runtime_restriction::init(std::filesystem::path(modloaderSource).filename().string())) {
-    std::vector<std::string> ld_paths = { "/vendor/lib64", "/system/lib64", "/system/product/lib64" };
-    for (auto const& entry : std::filesystem::recursive_directory_iterator(files_dir)) {
-      if (entry.is_directory()) {
-        ld_paths.push_back(entry.path());
-      }
-    }
-    if (runtime_restriction::add_ld_library_paths(std::move(ld_paths))) {
-      LOG_DEBUG("Added ld_library_paths!");
-    } else {
-      LOG_WARN("Failed to add ld_library_paths!");
-    }
-  } else {
-    LOG_WARN("Failed to add ld_library_paths!");
-  }
+  // TODO: LINKER LIB PATH RESOLUTION SKIPPED
+  LOG_WARN("SKIPPING LIB PATHS AND RT INITS");
 }
 
 MODLOADER_FUNC void modloader_load([[maybe_unused]] JNIEnv* env, char const* soDir) noexcept {
