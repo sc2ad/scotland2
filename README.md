@@ -31,3 +31,5 @@ Here is a table containing what gets opened and called when.
 | app start               | `dlopen`       | `dlopen`, `setup` | not yet initialized            |
 | il2cpp_init             | nothing called | `load`            | not yet initialized            |
 | DestroyObjectHighLevel  | nothing called | `late_load`       | `dlopen`, `setup`, `late_load` |
+
+All libs, early mods, and mods are loaded in _sortedd_ order, as opposed to directory order. This allows the load order to be consistent across the same sets of files. Strictly speaking, this uses [std::filesystem::path::compare](https://en.cppreference.com/w/cpp/filesystem/path/compare) to sort and thus will load in that order.
