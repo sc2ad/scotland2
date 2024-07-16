@@ -290,40 +290,43 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
   std::error_code error_code;
   // Note: We see through this iteration at compile time
   for (auto const& [ph, path] : loadPhaseMap.arr) {
-    if (ph == phase) {
-      std::vector<SharedObject> objects{};
+    if (ph != phase) continue;
 
-      auto dir = dependencyDir / path;
-      std::filesystem::directory_iterator dir_iter(dir, error_code);
-      if (error_code) {
-        LOG_ERROR("Failed to find objects in phase: {} from: {}: {}", phase, dependencyDir.c_str(),
-                  error_code.message().c_str());
-        return {};
-      }
-      for (auto const& file : dir_iter) {
-        if (error_code) {
-          LOG_WARN("Failed to open file while iterating: {}", dir.c_str());
-          continue;
-        }
-        // TODO: Add statcheck here
-        LOG_DEBUG("Walking over file: {}", file.path().c_str());
-        // All SharedObjects must be valid lib*.so files
-        if (file.is_directory()) {
-          continue;
-        }
-        if (file.path().extension() != ".so") {
-          continue;
-        }
-        if (!file.path().filename().string().starts_with("lib")) {
-          continue;
-        }
+    std::vector<SharedObject> objects{};
 
-        LOG_DEBUG("Adding to attempt load: {}", file.path().c_str());
-        objects.emplace_back(file.path());
-      }
-
-      return objects;
+    auto dir = dependencyDir / path;
+    std::filesystem::directory_iterator dir_iter(dir, error_code);
+    if (error_code) {
+      LOG_ERROR("Failed to find objects in phase: {} from: {}: {}", phase, dependencyDir.c_str(),
+                error_code.message().c_str());
+      return {};
     }
+    for (auto const& file : dir_iter) {
+      if (error_code) {
+        LOG_WARN("Failed to open file while iterating: {}", dir.c_str());
+        continue;
+      }
+      // TODO: Add statcheck here
+      LOG_DEBUG("Walking over file: {}", file.path().c_str());
+      // All SharedObjects must be valid lib*.so files
+      if (file.is_directory()) {
+        continue;
+      }
+      if (file.path().extension() != ".so") {
+        continue;
+      }
+      if (!file.path().filename().string().starts_with("lib")) {
+        continue;
+      }
+
+      LOG_DEBUG("Adding to attempt load: {}", file.path().c_str());
+      objects.emplace_back(file.path());
+    }
+
+    std::sort(objects.begin(), objects.end(),
+              [](SharedObject const& a, SharedObject const& b) constexpr { return a.path > b.path; });
+
+    return objects;
   }
   return {};
 }
