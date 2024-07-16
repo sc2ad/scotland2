@@ -293,7 +293,7 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
     if (ph != phase) {
       continue;
     }
-    
+
     std::vector<SharedObject> objects{};
 
     auto dir = dependencyDir / path;
@@ -326,7 +326,7 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
     }
 
     std::sort(objects.begin(), objects.end(),
-              [](SharedObject const& a, SharedObject const& b) constexpr { return a.path > b.path; });
+              [](SharedObject const& a, SharedObject const& b) constexpr { return a.path < b.path; });
 
     return objects;
   }
