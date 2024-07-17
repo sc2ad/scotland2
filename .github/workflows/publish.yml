@@ -43,7 +43,7 @@ jobs:
           restore: true # will run restore on download
           cache: true #will cache dependencies
 
-          publish: true
+          publish: "late"
           publish_token: ${{secrets.QPM_TOKEN}}
 
           version: ${{ steps.get_tag_version.outputs.VERSION }}
@@ -56,7 +56,7 @@ jobs:
       - name: Build
         run: |
           cd ${GITHUB_WORKSPACE}
-          qpm-rust s build
+          qpm s build
 
       - name: Get Library Name
         id: libname
