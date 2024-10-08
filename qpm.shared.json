@@ -1,5 +1,6 @@
 {
   "config": {
+    "version": "0.1.0",
     "sharedDir": "shared",
     "dependenciesDir": "extern",
     "info": {
@@ -15,8 +16,14 @@
       "scripts": {
         "build": [
           "pwsh ./build.ps1"
+        ],
+        "copy": [
+          "pwsh ./copy.ps1"
         ]
-      }
+      },
+      "qmodIncludeDirs": [],
+      "qmodIncludeFiles": [],
+      "qmodOutput": null
     },
     "dependencies": [
       {

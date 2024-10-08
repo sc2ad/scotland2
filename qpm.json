@@ -40,6 +40,9 @@
     "scripts": {
       "build": [
         "pwsh ./build.ps1"
+      ],
+      "copy": [
+        "pwsh ./copy.ps1"
       ]
     }
   }
