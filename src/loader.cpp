@@ -38,7 +38,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
   // Search in reverse load order, starting at phase
   std::error_code error_code;
   for (auto const& it : loadPhaseMap.arr) {
-    if (it.first != phase) {
+    if (static_cast<int>(it.first) > static_cast<int>(phase) && it.first != LoadPhase::Shim) {
       continue;
     }
     auto path_to_check = dependencyDir / it.second / name;

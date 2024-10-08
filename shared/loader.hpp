@@ -36,6 +36,7 @@ enum struct LoadPhase {
   Libs,
   EarlyMods,
   Mods,
+  Shim,
 };
 
 #ifdef MODLOADER_USE_FMT
@@ -45,8 +46,11 @@ inline auto format_as(LoadPhase p) {
 #endif
 
 using namespace std::literals::string_view_literals;
-constexpr static ConstexprMap loadPhaseMap(std::array<std::pair<LoadPhase, std::string_view>, 3>{
-    { { LoadPhase::Libs, "libs"sv }, { LoadPhase::EarlyMods, "early_mods"sv }, { LoadPhase::Mods, "mods"sv } } });
+constexpr static ConstexprMap loadPhaseMap(std::array<std::pair<LoadPhase, std::string_view>, 4>{
+    { { LoadPhase::Libs, "libs"sv },
+      { LoadPhase::EarlyMods, "early_mods"sv },
+      { LoadPhase::Mods, "mods"sv },
+      { LoadPhase::Shim, "shims"sv } } });
 
 using MissingDependency = SharedObject;
 using DependencyResult = std::variant<MissingDependency, Dependency>;

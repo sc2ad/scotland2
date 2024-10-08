@@ -563,6 +563,7 @@ MODLOADER_FUNC CLoadResultEnum modloader_require_mod(CModInfo* info, CMatchType 
   switch (loadedMod.phase) {
     case modloader::LoadPhase::None:
     case modloader::LoadPhase::Libs:
+    case modloader::LoadPhase::Shim:
       break;
     case modloader::LoadPhase::EarlyMods:
       if (!loadedMod.init()) {
