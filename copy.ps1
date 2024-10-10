@@ -1,5 +1,9 @@
-& cmake -G "Ninja" -DCMAKE_BUILD_TYPE="Debug" -DTEST_BUILD=1 -B build
-& cmake --build ./build
+Param(
+    [Parameter(Mandatory = $false)]
+    [Switch] $clean
+)
+
+& $PSScriptRoot/build.ps1 -clean:$clean
 
 & adb push ./build/libsl2.so /sdcard/ModData/com.beatgames.beatsaber/Modloader
 

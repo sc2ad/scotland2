@@ -1,11 +1,12 @@
 {
   "config": {
+    "version": "0.1.0",
     "sharedDir": "shared",
     "dependenciesDir": "extern",
     "info": {
       "name": "scotland2",
       "id": "scotland2",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "url": "https://github.com/sc2ad/scotland2",
       "additionalData": {
         "overrideSoName": "libsl2.so"
@@ -15,8 +16,14 @@
       "scripts": {
         "build": [
           "pwsh ./build.ps1"
+        ],
+        "copy": [
+          "pwsh ./copy.ps1"
         ]
-      }
+      },
+      "qmodIncludeDirs": [],
+      "qmodIncludeFiles": [],
+      "qmodOutput": null
     },
     "dependencies": [
       {
