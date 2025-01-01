@@ -90,9 +90,6 @@ typedef struct {
   size_t size;
 } CLoadResults;
 
-#ifdef __cplusplus
-}
-#endif
 /// @brief Returns true if the modloader failed to copy over the libs/mods to load, false otherwise
 MODLOADER_FUNC bool modloader_get_failed();
 /// @brief The captured pointer to the JavaVM
@@ -158,3 +155,7 @@ MODLOADER_FUNC bool modloader_add_ld_library_path(char const* path);
 // TODO: Add void** param to setup call, store as userdata in a given mod structure
 
 /*NOLINTEND(modernize-use-using)*/
+
+#ifdef __cplusplus
+}
+#endif
