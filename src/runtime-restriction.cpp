@@ -10,7 +10,10 @@
 #include <unistd.h>
 #include <unordered_map>
 
-#define PAGE_START(addr) (PAGE_MASK & addr)
+static const int kPageSize = getpagesize();
+static const int kPageMask = ~(kPageSize - 1);
+
+#define PAGE_START(addr) (kPageMask & addr)
 
 namespace runtime_restriction {
 
@@ -94,7 +97,7 @@ bool init(std::string_view modloaderFile) {
       }
     }
     if (mainNamespace != nullptr) {
-      mprotect(reinterpret_cast<void*>(PAGE_START(reinterpret_cast<uintptr_t>(mainNamespace))), PAGE_SIZE,
+      mprotect(reinterpret_cast<void*>(PAGE_START(reinterpret_cast<uintptr_t>(mainNamespace))), kPageSize,
                PROT_READ | PROT_WRITE);
       mainNamespace->set_isolated(false);
     } else {

@@ -201,7 +201,10 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] void* unity_handle, void* il2cpp_
   }
 
   auto destroy_immediate = static_cast<uint32_t*>(resolve_icall("UnityEngine.Object::DestroyImmediate"));
-  RET_NULL_LOG_UNLESS(destroy_immediate);
+  if (!destroy_immediate) {
+    destroy_immediate = static_cast<uint32_t*>(resolve_icall("UnityEngine.Object::DestroyImmediate_Injected"));
+    RET_NULL_LOG_UNLESS(destroy_immediate);
+  }
   LOG_OFFSET("UnityEngine.Object::DestroyImmediate", destroy_immediate);
 
   // find first ret to find end of method
