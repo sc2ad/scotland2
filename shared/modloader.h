@@ -2,7 +2,15 @@
 #pragma once
 
 // Exposed API functions
+#if __has_include(<jni.h>) || ANDROID
+#define MODLOADER_JNI
 #include <jni.h>
+typedef JavaVM* modloader_jvm_type;
+#else
+typedef void* modloader_jvm_type;
+#endif
+
+#include <stdbool.h>
 #include <stdint.h>
 #include "_config.h"
 
@@ -82,13 +90,10 @@ typedef struct {
   size_t size;
 } CLoadResults;
 
-#ifdef __cplusplus
-}
-#endif
 /// @brief Returns true if the modloader failed to copy over the libs/mods to load, false otherwise
 MODLOADER_FUNC bool modloader_get_failed();
 /// @brief The captured pointer to the JavaVM
-MODLOADER_EXPORT extern JavaVM* modloader_jvm;
+MODLOADER_EXPORT extern modloader_jvm_type modloader_jvm;
 /// @brief The captured dlopen-d libil2cpp.so handle
 MODLOADER_EXPORT extern void* modloader_libil2cpp_handle;
 /// @brief The captured dlopen-d libunity.so handle
@@ -150,3 +155,7 @@ MODLOADER_FUNC bool modloader_add_ld_library_path(char const* path);
 // TODO: Add void** param to setup call, store as userdata in a given mod structure
 
 /*NOLINTEND(modernize-use-using)*/
+
+#ifdef __cplusplus
+}
+#endif
