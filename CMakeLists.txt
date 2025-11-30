@@ -50,6 +50,12 @@ endif()
 
 RECURSE_FILES(cpp_file_list ${SOURCE_DIR}/*.cpp)
 
+list(APPEND cpp_file_list
+    ${EXTERN_DIR}/includes/flamingo/src/fixups.cpp
+    ${EXTERN_DIR}/includes/flamingo/src/installer.cpp
+    ${EXTERN_DIR}/includes/flamingo/src/page-allocator.cpp
+)
+
 add_library(
     ${COMPILE_ID} 
     SHARED
@@ -70,10 +76,13 @@ MESSAGE(STATUS "extern added!")
 get_target_property(LINKED_LIBS ${COMPILE_ID} LINK_LIBRARIES)
 message("Libraries being linked: ${LINKED_LIBS}")
 list(REMOVE_ITEM LINKED_LIBS ${EXTERN_DIR}/libs/libflamingo.so)
+list(REMOVE_ITEM LINKED_LIBS ${EXTERN_DIR}/libs/libflamingo.debug.so)
 message("After removal: ${LINKED_LIBS}")
 set_property(TARGET ${COMPILE_ID} PROPERTY LINK_LIBRARIES ${LINKED_LIBS})
 # Add include specifically for flamingo shared folder
 target_include_directories(${COMPILE_ID} PRIVATE ${EXTERN_DIR}/includes/flamingo/shared)
+# Add include specifically for flamingo build (to capstone directly)
+target_include_directories(${COMPILE_ID} PRIVATE ${EXTERN_DIR}/includes/capstone/shared)
 
 
 if (${BUILD_FOR} STREQUAL LINUX)

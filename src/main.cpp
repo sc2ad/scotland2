@@ -20,6 +20,8 @@
 #include "installer.hpp"
 #include "util.hpp"
 
+#include "hook-installation-result.hpp"
+
 namespace {
 std::string application_id;
 std::filesystem::path modloader_path;
@@ -65,7 +67,7 @@ void install_load_hook(uint32_t* target) {
   // install hook
   auto result = flamingo::Install(flamingo::HookInfo(+init_hook, (void*)target, &orig_il2cpp_init));
   if (!result.has_value()) {
-    FLAMINGO_ABORT("failed to install load hook");
+    FLAMINGO_ABORT("failed to install load hook: {}", result.error());
   }
   handle = result.value().returned_handle;
 }
@@ -98,7 +100,7 @@ void install_unity_hook(uint32_t* target) {
   // install hook
   auto result = flamingo::Install(flamingo::HookInfo(+unity_hook, (void*)target, &orig_destroy_obj_high_level));
   if (!result.has_value()) {
-    FLAMINGO_ABORT("failed to install unity hook");
+    FLAMINGO_ABORT("failed to install unity hook: {}", result.error());
   }
   handle = result.value().returned_handle;
 }
