@@ -176,7 +176,9 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] void* unity_handle, void* il2cpp_
   auto destroy_object_high_level = cs::findNthB<1, false>(scripting_destroy_immediate);
   RET_NULL_LOG_UNLESS(destroy_object_high_level);
   LOG_OFFSET("DestroyObjectHighLevel", *destroy_object_high_level);
-  return *destroy_object_high_level;
+  auto destroy_object_high_level_2 = cs::findNthB<1, false>(*destroy_object_high_level);
+  RET_NULL_LOG_UNLESS(destroy_object_high_level);
+  return *destroy_object_high_level_2;
 }
 
 #undef LOG_OFFSET
