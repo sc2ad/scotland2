@@ -17,9 +17,10 @@
 #include "capstone-utils.hpp"
 #include "elf-utils.hpp"
 #include "runtime-restriction.hpp"
-#include "trampoline-allocator.hpp"
-#include "trampoline.hpp"
+#include "installer.hpp"
 #include "util.hpp"
+
+#include "hook-installation-result.hpp"
 
 namespace {
 std::string application_id;
@@ -34,132 +35,60 @@ bool failed = false;
 using namespace std::literals::string_view_literals;
 constexpr std::string_view libil2cppName = "libil2cpp.so"sv;
 
-void print_decode_loop(uint32_t* val, int n) {
-  auto handle = flamingo::getHandle();
-  for (int i = 0; i < n; i++) {
-    cs_insn* insns = nullptr;
-    auto count = cs_disasm(handle, reinterpret_cast<uint8_t const*>(val), sizeof(uint32_t),
-                           static_cast<uint64_t>(reinterpret_cast<uint64_t>(val)), 1, &insns);
-    if (count == 1) {
-      FLAMINGO_DEBUG("Addr: {} Value: 0x{:x}, {} {}", fmt::ptr(val), *val, insns->mnemonic, insns->op_str);
-    } else {
-      FLAMINGO_DEBUG("Addr: {} Value: 0x{:x}", fmt::ptr(val), *val);
-    }
-    val++;
-  }
-}
-
-/// should flush instruction cache
-#define __flush_cache(c, n) __builtin___clear_cache(reinterpret_cast<char*>(c), reinterpret_cast<char*>(c) + n)
-
-/// @brief undoes a hook at target with the original instructions from trampoline
-void undo_hook(flamingo::Trampoline const& trampoline, uint32_t* target) {
-  constexpr static auto kPageSize = 4096ULL;
-  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
-
-  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
-  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-    // Log error on mprotect!
-    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
-                   fmt::ptr(page_aligned_target), std::strerror(errno));
-  }
-  FLAMINGO_DEBUG("Undoing hook of {} with {} original instructions", fmt::ptr(target),
-                 trampoline.original_instructions.size());
-  std::copy_n(trampoline.original_instructions.begin(), trampoline.original_instructions.size(), target);
-
-  FLAMINGO_DEBUG("Target decoded after uninstall: {}", fmt::ptr(target));
-  print_decode_loop(target, 5);
-  __flush_cache(target, sizeof(uint32_t) * 4);
-}
 
 /// @brief attempts to setup the unity late load hook
 void setup_unity_hook();
 
 void install_load_hook(uint32_t* target) {
-  FLAMINGO_DEBUG("Installing hook at: {}, initial dump:", fmt::ptr(target));
-  print_decode_loop(target, 5);
-  // Size of the trampoline allocation we desire in number of instructions
-  constexpr static auto trampolineInstCount = 16;
-  // Size of the allocation page to mark as +rwx
-  constexpr static auto kPageSize = 4096ULL;
-  // Trampoline size in bytes as a reference. Support for only one hook
-  size_t trampoline_size = trampolineInstCount * sizeof(uint32_t);
-  FLAMINGO_DEBUG("Hello from flamingo!");
-  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampoline_size);
-  // We write fixups for the first 4 instructions in the target
-  trampoline.WriteHookFixups(target);
-  // Then write the jumpback at instruction 5 to continue the code
-  trampoline.WriteCallback(&target[4]);
-  trampoline.Finish();
-  // Ensure target is writable
-  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
-  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
-  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-    // Log error on mprotect!
-    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
-                   fmt::ptr(page_aligned_target), std::strerror(errno));
-  }
-  static flamingo::Trampoline target_hook(target, trampolineInstCount, trampoline_size);
-  static auto target_hook_point = target;
-  auto init_hook = [](char const* domain_name) noexcept -> int {
-    // Call orig first
-    LOG_DEBUG("il2cpp_init called with: {}", domain_name);
-    auto ret = reinterpret_cast<int (*)(char const*)>(trampoline.address.data())(domain_name);
+  static flamingo::HookHandle handle;
+  static int (*orig_il2cpp_init)(char const*) = nullptr;
 
-    undo_hook(trampoline, target_hook_point);
+  // hook lambda
+  auto init_hook = [](char const* domain_name) noexcept -> int {
+    
+    // call orig
+    LOG_DEBUG("il2cpp_init called with: {}", domain_name);
+    auto ret = orig_il2cpp_init(domain_name);
+
+    // uninstall hook
+    auto res = flamingo::Uninstall(handle);
+    if (!res.has_value() || res.value()) {
+      FLAMINGO_ABORT("failed to uninstall load hook");
+    }
+
+    // load early mods
     modloader::load_early_mods();
 
     // we do the unity hook after il2cpp init so the icalls are registered
     setup_unity_hook();
     return ret;
   };
-  // TODO: mprotect memory again after we are done writing
-  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+init_hook));
-  target_hook.Finish();
-  __flush_cache(target, sizeof(uint32_t) * 4);
 
-  FLAMINGO_DEBUG("Hook installed! Target: {} (il2cpp_init) now will call: {} (hook), with trampoline: {}",
-                 fmt::ptr(target), fmt::ptr(+init_hook), fmt::ptr(trampoline.address.data()));
-  FLAMINGO_DEBUG("Target decoded: {}", fmt::ptr(target));
-  print_decode_loop(target, 5);
-  FLAMINGO_DEBUG("Trampoline decoded: {}", fmt::ptr(trampoline.address.data()));
-  print_decode_loop(trampoline.address.data(), 16);
+  // install hook
+  auto result = flamingo::Install(flamingo::HookInfo(+init_hook, (void*)target, &orig_il2cpp_init));
+  if (!result.has_value()) {
+    FLAMINGO_ABORT("failed to install load hook: {}", result.error());
+  }
+  handle = result.value().returned_handle;
 }
 
 void install_unity_hook(uint32_t* target) {
-  // Size of the trampoline allocation we desire in number of instructions
-  constexpr static auto trampolineInstCount = 16;
-  // Size of the allocation page to mark as +rwx
-  constexpr static auto kPageSize = 4096ULL;
-  // Trampoline size in bytes as a reference. Support for only one hook
-  size_t trampoline_size = trampolineInstCount * sizeof(uint32_t);
-  static auto trampoline_target = target;
-  static auto trampoline = flamingo::TrampolineAllocator::Allocate(trampoline_size);
-  // We write fixups for the first 4 instructions in the target
-  trampoline.WriteHookFixups(target);
-  // Then write the jumpback at instruction 5 to continue the code
-  trampoline.WriteCallback(&target[4]);
-  trampoline.Finish();
-  // Ensure target is writable
-  auto* page_aligned_target = reinterpret_cast<uint32_t*>(reinterpret_cast<uint64_t>(target) & ~(kPageSize - 1));
-  FLAMINGO_DEBUG("Marking target: {} as writable, page aligned: {}", fmt::ptr(target), fmt::ptr(page_aligned_target));
-  if (::mprotect(page_aligned_target, kPageSize, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-    // Log error on mprotect!
-    FLAMINGO_ABORT("Failed to mark: {} (page aligned: {}) as +rwx. err: {}", fmt::ptr(target),
-                   fmt::ptr(page_aligned_target), std::strerror(errno));
-  }
-  static flamingo::Trampoline target_hook(target, trampolineInstCount, trampoline_size);
-  // we hook ClearRoots which is a method called at the start of StartFirstScene.
-  // if we did anything with gameobjects before this, it would clear them here, so we load our late mods *after*
-  // that way, mods can create GameObjects and other unity objects at dlopen time if they want to.
+  static flamingo::HookHandle handle;
+  static void (*orig_destroy_obj_high_level)(void*, bool) = nullptr;
+
+  // hook lambda
   auto unity_hook = [](void* param_1, bool param_2) noexcept {
     // First param is a unity object, second param is some kind of bool
 
-    LOG_DEBUG("DestroyImmediate called with params {} {}", fmt::ptr(param_1), param_2);
-
     // call orig
-    reinterpret_cast<void (*)(void*, bool)>(trampoline.address.data())(param_1, param_2);
-    undo_hook(trampoline, trampoline_target);
+    LOG_DEBUG("DestroyImmediate called with params {} {}", fmt::ptr(param_1), param_2);
+    orig_destroy_obj_high_level(param_1, param_2);
+
+    // uninstall hook
+    auto res = flamingo::Uninstall(handle);
+    if (!res.has_value()) {
+      FLAMINGO_ABORT("failed to uninstall unity hook");
+    }
 
     // open mods and call load / late_load on things that require it
     LOG_DEBUG("Opening mods");
@@ -167,13 +96,13 @@ void install_unity_hook(uint32_t* target) {
     LOG_DEBUG("Loading mods");
     modloader::load_mods();
   };
-  target_hook.WriteCallback(reinterpret_cast<uint32_t*>(+unity_hook));
-  target_hook.Finish();
-  __flush_cache(target, sizeof(uint32_t) * 4);
 
-  // TODO: mprotect memory again after we are done writing
-  FLAMINGO_DEBUG("Hook installed! Target: {} (DestroyImmediate) now will call: {} (hook), with trampoline: {}",
-                 fmt::ptr(target), fmt::ptr(+unity_hook), fmt::ptr(trampoline.address.data()));
+  // install hook
+  auto result = flamingo::Install(flamingo::HookInfo(+unity_hook, (void*)target, &orig_destroy_obj_high_level));
+  if (!result.has_value()) {
+    FLAMINGO_ABORT("failed to install unity hook: {}", result.error());
+  }
+  handle = result.value().returned_handle;
 }
 
 #define RET_NULL_LOG_UNLESS(v)       \
@@ -247,7 +176,9 @@ uint32_t* find_unity_hook_loc([[maybe_unused]] void* unity_handle, void* il2cpp_
   auto destroy_object_high_level = cs::findNthB<1, false>(scripting_destroy_immediate);
   RET_NULL_LOG_UNLESS(destroy_object_high_level);
   LOG_OFFSET("DestroyObjectHighLevel", *destroy_object_high_level);
-  return *destroy_object_high_level;
+  auto destroy_object_high_level_2 = cs::findNthB<1, false>(*destroy_object_high_level);
+  RET_NULL_LOG_UNLESS(destroy_object_high_level);
+  return *destroy_object_high_level_2;
 }
 
 #undef LOG_OFFSET
