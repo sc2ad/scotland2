@@ -48,7 +48,7 @@ typedef enum {
 typedef enum {
   LoadResult_NotFound,
   LoadResult_Failed,
-  MatchType_Loaded,
+  LoadResult_Loaded,
   // LoadResult_AlreadyLoaded, TODO:
 } CLoadResultEnum;
 
