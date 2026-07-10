@@ -37,16 +37,26 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
                                                                    LoadPhase phase, std::filesystem::path const& name) {
   // Search in reverse load order, starting at phase
   std::error_code error_code;
-  for (auto const& it : loadPhaseMap.arr) {
-    if (static_cast<int>(it.first) > static_cast<int>(phase) && it.first != LoadPhase::Shim) {
+  std::optional<std::pair<SharedObject, LoadPhase>> result = std::nullopt;
+  for (auto const& [phase_var, path] : loadPhaseMap.arr) {
+    if (static_cast<int>(phase_var) > static_cast<int>(phase) && phase_var != LoadPhase::Shim) {
       continue;
     }
-    auto path_to_check = dependencyDir / it.second / name;
+    auto path_to_check = dependencyDir / path / name;
     LOG_DEBUG("Searching for dependency: {} at: {}", name.c_str(), path_to_check.c_str());
     if (std::filesystem::exists(path_to_check, error_code)) {
+      if (result.has_value()) {
+        auto const& [existing_obj, existing_phase] = result.value();
+        LOG_ERROR(
+            "Dependency: {} found in multiple phases! Existing: {} at phase: {}, New: {} at phase: {}. Skipping to "
+            "avoid ambiguity",
+            name.c_str(), existing_obj.path.c_str(), static_cast<int>(existing_phase), path_to_check.c_str(),
+            static_cast<int>(phase));
+        return std::nullopt;
+      }
       // Dependency exists at this phase.
       // TODO: This should actually check to ensure that this file is actually readable, not just exists
-      return { std::make_pair(SharedObject(path_to_check), it.first) };
+      result = { std::make_pair(SharedObject(path_to_check), phase_var) };
     }
     if (error_code) {
       LOG_ERROR("Failed to check for existence of: {}: {}", path_to_check.c_str(), error_code.message().c_str());
@@ -56,7 +66,7 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
   }
   // If we get to a point where we tried all of our explicit dependencies, return a None phase and try to let the
   // linker determine it when opening it.
-  return { { SharedObject(name), LoadPhase::None } };
+  return result.value_or(std::make_pair(SharedObject(name), LoadPhase::None ));
 }
 
 std::vector<DependencyResult> SharedObject::getToLoad(
