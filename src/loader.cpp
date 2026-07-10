@@ -11,6 +11,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <deque>
@@ -286,7 +287,7 @@ std::deque<Dependency> topologicalSort(std::vector<Dependency>&& list) {
   return dependencies;
 }
 
-std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase) {
+std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase, std::unordered_set<std::filesystem::path> alreadyLoaded) {
   std::error_code error_code;
   // Note: We see through this iteration at compile time
   for (auto const& [ph, path] : loadPhaseMap.arr) {
@@ -319,6 +320,17 @@ std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dep
       }
       if (!file.path().filename().string().starts_with("lib")) {
         continue;
+      }
+      
+      // find if any of the already loaded libraries have the same soname as this one, and if so, skip it
+      auto existing = std::find_if(alreadyLoaded.begin(), alreadyLoaded.end(),
+                                   [&file](std::filesystem::path const& existing) {
+                                     auto existingSoname = existing.filename();
+                                     auto fileSoname = file.path().filename();
+                                     return existingSoname == fileSoname;
+                                   });
+      if (existing != alreadyLoaded.end()) {
+        LOG_ERROR("Found a library with same soname as one already loaded: {}. Skipping...", file.path().c_str());       continue;
       }
 
       LOG_DEBUG("Adding to attempt load: {}", file.path().c_str());
@@ -387,7 +399,7 @@ std::optional<T> getFunction(void* handle, std::string_view name, std::filesyste
 }
 
 std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
-                                std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
+                                std::unordered_set<std::filesystem::path>& skipLoad, LoadPhase phase) {
   if (skipLoad.contains(mod.path)) {
     LOG_WARN("Already loaded object at path: {}", mod.path.c_str());
     return {};
@@ -454,7 +466,7 @@ std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const&
 
 // mods is an OWNING span of SharedObjects! They will be moved FROM mods into results
 std::vector<LoadResult> loadMods(std::span<SharedObject> mods, std::filesystem::path const& dependencyDir,
-                                 std::unordered_set<std::string>& skipLoad, LoadPhase phase) {
+                                 std::unordered_set<std::filesystem::path>& skipLoad, LoadPhase phase) {
   std::vector<LoadResult> results;
   results.reserve(mods.size());
 

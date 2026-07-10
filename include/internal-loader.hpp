@@ -16,13 +16,13 @@ namespace modloader {
 
 static_assert(std::is_move_assignable_v<LoadResult> && std::is_move_constructible_v<LoadResult>, "");
 
-std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase);
+std::vector<SharedObject> listAllObjectsInPhase(std::filesystem::path const& dependencyDir, LoadPhase phase, std::unordered_set<std::filesystem::path> alreadyLoaded);
 
 // Moves FROM mods
 [[nodiscard]] std::vector<LoadResult> loadMods(std::span<SharedObject> mods, std::filesystem::path const& dependencyDir,
-                                               std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+                                               std::unordered_set<std::filesystem::path>& skipLoad, LoadPhase phase);
 [[nodiscard]] std::vector<LoadResult> loadMod(SharedObject&& mod, std::filesystem::path const& dependencyDir,
-                                              std::unordered_set<std::string>& skipLoad, LoadPhase phase);
+                                              std::unordered_set<std::filesystem::path>& skipLoad, LoadPhase phase);
 
 /// @brief Copies all of the files to be loaded by the modloader to a location that it can mark as executable.
 /// Does NOT use symlinks to avoid tainting permissions.
