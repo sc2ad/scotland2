@@ -178,6 +178,7 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
   current_load_phase = CLoadPhase::LoadPhase_EarlyMods;
   // Construct early mods
   // Not thread safe: mutates skip_load, initializes in sequential order
+  LOG_INFO("Opening early mods using root: {}", filesDir.c_str());
   auto early_mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::EarlyMods, skip_load);
   loaded_early_mods = loadMods(early_mod_sos, filesDir, skip_load, LoadPhase::EarlyMods);
   // Call initialize and report errors
@@ -198,6 +199,7 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
 void open_mods(std::filesystem::path const& filesDir) noexcept {
   current_load_phase = CLoadPhase::LoadPhase_Mods;
   // Construct mods (aka 'late' unity mods), should be happening after unity is inited (first scene loaded)
+  LOG_INFO("Opening late mods using root: {}", filesDir.c_str());
   auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods, skip_load);
   loaded_mods = loadMods(mod_sos, filesDir, skip_load, LoadPhase::Mods);
 
