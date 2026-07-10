@@ -39,9 +39,6 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
   std::error_code error_code;
   std::optional<std::pair<SharedObject, LoadPhase>> result = std::nullopt;
   for (auto const& [phase_var, path] : loadPhaseMap.arr) {
-    if (static_cast<int>(phase_var) > static_cast<int>(phase) && phase_var != LoadPhase::Shim) {
-      continue;
-    }
     auto path_to_check = dependencyDir / path / name;
     LOG_DEBUG("Searching for dependency: {} at: {}", name.c_str(), path_to_check.c_str());
     if (std::filesystem::exists(path_to_check, error_code)) {
@@ -64,6 +61,16 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
     }
     // Otherwise, this filename doesn't exist under this phase. Try the next one.
   }
+  // validate phase
+  if (result.has_value()) {
+    auto const& [obj, found_phase] = result.value();
+    if (static_cast<int>(found_phase) > static_cast<int>(phase) && found_phase != LoadPhase::Shim) {
+      result = std::nullopt;
+      LOG_ERROR("Dependency: {} found in phase: {} which is after the requested phase: {}. Skipping!",
+               obj.path.c_str(), static_cast<int>(found_phase), static_cast<int>(phase));
+    }
+  }
+  
   // If we get to a point where we tried all of our explicit dependencies, return a None phase and try to let the
   // linker determine it when opening it.
   return result.value_or(std::make_pair(SharedObject(name), LoadPhase::None ));
