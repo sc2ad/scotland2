@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
+#include <initializer_list>
 #include <new>
 #include <optional>
 #include <variant>
@@ -122,6 +124,45 @@ bool remove_dir(std::filesystem::path const& dir) {
   return true;
 }
 
+void validateDuplicateIds(std::initializer_list<std::vector<modloader::LoadResult> const*> load_results) {
+  std::vector<modloader::LoadedMod const*> flattenedLoaded;
+  // collect all ids from the load results
+  for (const auto& phase_results : load_results) {
+    for (const auto& result : *phase_results) {
+      if (const auto* mod = std::get_if<modloader::LoadedMod>(&result)) {
+        flattenedLoaded.push_back(mod);
+      }
+    }
+  }
+
+  std::stable_sort(flattenedLoaded.begin(), flattenedLoaded.end(), [](modloader::LoadedMod const* a, modloader::LoadedMod const* b) {
+    return a->object.path < b->object.path;
+  });
+  // move all duplicates to end of the list
+  auto duplicates = std::unique(flattenedLoaded.begin(), flattenedLoaded.end(),
+                                [](modloader::LoadedMod const* a, modloader::LoadedMod const* b) {
+    // check if the mod IDs are the same, or if the filenames are the same (to catch mods that have the same name but different paths)
+    return a->modInfo.id == b->modInfo.id || a->object.path.filename() == b->object.path.filename();
+  });
+  // check if there are any duplicates
+  if (duplicates != flattenedLoaded.end()) {
+    LOG_ERROR("Duplicate IDs found!");
+    // log full list
+    LOG_DEBUG("Full list of loaded mods:");
+    for (auto const* mod : flattenedLoaded) {
+      LOG_DEBUG("Mod path {} ID: {}", mod->object.path.c_str(), mod->modInfo.id.c_str());
+    }
+
+    LOG_ERROR("Duplicate IDS:");
+    for (auto it = flattenedLoaded.begin(); it != duplicates; ++it) {
+      LOG_ERROR("Mod path {} ID: {}", (*it)->object.path.c_str(), (*it)->modInfo.id.c_str());
+    }
+    // now ABORT, because we don't want to continue loading with duplicate IDs
+    LOG_ERROR("Duplicate IDs found! Aborting loading process to avoid undefined behavior.");
+    std::abort();
+  }
+  
+}
 }  // namespace
 
 namespace modloader {
@@ -179,6 +220,7 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
   // Construct early mods
   // Not thread safe: mutates skip_load, initializes in sequential order
   auto early_mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::EarlyMods);
+  LOG_DEBUG("Found: {} early mod candidates! Attempting to load them...", early_mod_sos.size());
   loaded_early_mods = loadMods(early_mod_sos, filesDir, skip_load, LoadPhase::EarlyMods);
   // Call initialize and report errors
   for (auto& m : loaded_early_mods) {
@@ -192,6 +234,7 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
       LOG_WARN("Skipping setup call on: {} because it failed: {}", fail->object.path.c_str(), fail->failure.c_str());
     }
   }
+  validateDuplicateIds({ &loaded_libs, &loaded_early_mods });
   early_mods_opened = true;
 }
 
@@ -201,13 +244,13 @@ void open_mods(std::filesystem::path const& filesDir) noexcept {
   auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods);
   loaded_mods = loadMods(mod_sos, filesDir, skip_load, LoadPhase::Mods);
 
-  LOG_INFO("Found late mods:");
+  LOG_INFO("Found {} late mods: ", loaded_mods.size());
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
       LOG_INFO("{}", loaded_mod->object.path.c_str());
     }
   }
-  
+
   // Call initialize and report errors
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
@@ -221,6 +264,8 @@ void open_mods(std::filesystem::path const& filesDir) noexcept {
     }
   }
   late_mods_opened = true;
+
+  validateDuplicateIds({ &loaded_libs, &loaded_early_mods, &loaded_mods });
 }
 
 void load_early_mods() noexcept {
