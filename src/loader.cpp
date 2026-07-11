@@ -65,9 +65,9 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
   if (result.has_value()) {
     auto const& [obj, found_phase] = result.value();
     if (static_cast<int>(found_phase) > static_cast<int>(phase) && found_phase != LoadPhase::Shim) {
-      result = std::nullopt;
       LOG_ERROR("Dependency: {} found in phase: {} which is after the requested phase: {}. Skipping!",
                obj.path.c_str(), static_cast<int>(found_phase), static_cast<int>(phase));
+      return std::nullopt;
     }
   }
   
