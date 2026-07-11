@@ -28,15 +28,25 @@
 namespace modloader {
 
 using namespace elf_utils;
-/// @brief Find and create a SharedObject representing the resolved dependency, if it can be found.
-/// @param dependencyDir The top level directory
-/// @param phase The load phase of the dependency to start the search from
-/// @param name The dependency's name to open
-/// @return The returned pair on success, nullopt otherwise
+
+/// @brief Resolves a dependency by searching across all load phases and returning the appropriate phase.
+/// @param dependencyDir The root directory to search in
+/// @param phase The minimum load phase constraint (rejects dependencies found in later phases)
+/// @param name The dependency name to resolve
+/// @return An optional pair:
+///
+/// (SharedObject, LoadPhase::None) if the dependency wasn't found in any phase (caller will attempt unresolved
+///  loading)
+///
+/// (SharedObject, phase) if found in a specific phase
+///
+/// nullopt if the dependency was found in multiple phases (ambiguity error) or if filesystem access failed
 std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesystem::path const& dependencyDir,
                                                                    LoadPhase phase, std::filesystem::path const& name) {
+  auto not_found = std::make_pair(SharedObject(name), LoadPhase::None);
   // Search in reverse load order, starting at phase
   std::error_code error_code;
+
   std::optional<std::pair<SharedObject, LoadPhase>> result = std::nullopt;
   for (auto const& [phase_var, path] : loadPhaseMap.arr) {
     auto path_to_check = dependencyDir / path / name;
@@ -65,15 +75,15 @@ std::optional<std::pair<SharedObject, LoadPhase>> findSharedObject(std::filesyst
   if (result.has_value()) {
     auto const& [obj, found_phase] = result.value();
     if (static_cast<int>(found_phase) > static_cast<int>(phase) && found_phase != LoadPhase::Shim) {
-      LOG_ERROR("Dependency: {} found in phase: {} which is after the requested phase: {}. Skipping!",
-               obj.path.c_str(), static_cast<int>(found_phase), static_cast<int>(phase));
+      LOG_ERROR("Dependency: {} found in phase: {} which is after the requested phase: {}. Fail!", obj.path.c_str(),
+                static_cast<int>(found_phase), static_cast<int>(phase));
       return std::nullopt;
     }
   }
   
   // If we get to a point where we tried all of our explicit dependencies, return a None phase and try to let the
   // linker determine it when opening it.
-  return result.value_or(std::make_pair(SharedObject(name), LoadPhase::None ));
+  return result.value_or(not_found);
 }
 
 std::vector<DependencyResult> SharedObject::getToLoad(
