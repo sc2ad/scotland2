@@ -4,28 +4,24 @@
 #include <link.h>
 
 namespace elf_utils {
-  
-  void* getSymbol(std::span<uint8_t> f, std::string_view symbol_name) { 
+
+  void* getSymbol(std::span<uint8_t> f, std::string_view symbol_name) {
     auto elf = readAtOffset<Elf64_Ehdr>(f, 0);
     LOG_DEBUG("Header read: ehsize: {}, type: {}, version: {}, shentsize: {}", elf.e_ehsize, elf.e_type, elf.e_version,
               elf.e_shentsize);
     auto sections = readManyAtOffset<Elf64_Shdr>(f, elf.e_shoff, elf.e_shnum, elf.e_shentsize);
-    Elf64_Shdr symtab, strtab;
-    symtab.sh_addr = 0;
-    strtab.sh_addr = 0;
+
+    Elf64_Shdr const* symtab;
     for (auto const& sectionHeader : sections) {
       if (sectionHeader.sh_type == SHT_SYMTAB) {
-        symtab = sectionHeader;
+        symtab = &sectionHeader;
       }
-      if (sectionHeader.sh_type == SHT_STRTAB) {
-        strtab = sectionHeader;
-      }
-      if(symtab.sh_addr && strtab.sh_addr)
-        break;
     }
-    auto symbols = readManyAtOffset<Elf64_Sym>(f, symtab.sh_offset, symtab.sh_size / symtab.sh_entsize, symtab.sh_entsize);
+    auto const* strtab = &sections[symtab->sh_link];
+
+    auto symbols = readManyAtOffset<Elf64_Sym>(f, symtab->sh_offset, symtab->sh_size / symtab->sh_entsize, symtab->sh_entsize);
     for (auto const& symbol : symbols) {
-      std::string_view name = &readAtOffset<char const>(f, strtab.sh_offset + symbol.st_name);
+      std::string_view name = &readAtOffset<char const>(f, strtab->sh_offset + symbol.st_name);
       if(symbol_name == name)
         return reinterpret_cast<void*>(symbol.st_value);
     }
