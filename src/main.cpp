@@ -45,7 +45,7 @@ void install_load_hook(uint32_t* target) {
 
   // hook lambda
   auto init_hook = [](char const* domain_name) noexcept -> int {
-    
+
     // call orig
     LOG_DEBUG("il2cpp_init called with: {}", domain_name);
     auto ret = orig_il2cpp_init(domain_name);
