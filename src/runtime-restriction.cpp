@@ -91,7 +91,8 @@ bool init(std::string_view modloaderFile) {
     }
 
     for (auto&& [hdl, info] : *g_soinfo_handles_map) {
-      if (std::string(get_soname(info)) == modloaderFile) {
+      auto const* soname = get_soname(info);
+      if (soname && std::string(soname) == modloaderFile) {
         mainNamespace = get_primary_namespace(info);
         break;
       }
