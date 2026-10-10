@@ -34,7 +34,7 @@ std::vector<modloader::LoadResult> loaded_early_mods;
 // Private set for mods
 std::vector<modloader::LoadResult> loaded_mods;
 // Private set to avoid dlopening redundantly
-std::unordered_set<std::string> skip_load{};
+std::unordered_set<std::filesystem::path> skip_load{};
 
 // Get status type as string
 char const* status_type(std::filesystem::file_type const type) {
@@ -160,7 +160,7 @@ void open_libs(std::filesystem::path const& filesDir) noexcept {
   current_load_phase = CLoadPhase::LoadPhase_Libs;
   // Not thread safe: mutates skip_load
   LOG_DEBUG("Opening libs using root: {}", filesDir.c_str());
-  auto lib_sos = listAllObjectsInPhase(filesDir, LoadPhase::Libs);
+  auto lib_sos = listAllObjectsInPhase(filesDir, LoadPhase::Libs, skip_load);
   LOG_DEBUG("Found: {} candidates! Attempting to load them...", lib_sos.size());
   // TODO: Libs are stored as LoadedMod which is redundant
   loaded_libs = loadMods(lib_sos, filesDir, skip_load, LoadPhase::Libs);
@@ -178,7 +178,8 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
   current_load_phase = CLoadPhase::LoadPhase_EarlyMods;
   // Construct early mods
   // Not thread safe: mutates skip_load, initializes in sequential order
-  auto early_mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::EarlyMods);
+  LOG_INFO("Opening early mods using root: {}", filesDir.c_str());
+  auto early_mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::EarlyMods, skip_load);
   loaded_early_mods = loadMods(early_mod_sos, filesDir, skip_load, LoadPhase::EarlyMods);
   // Call initialize and report errors
   for (auto& m : loaded_early_mods) {
@@ -198,7 +199,8 @@ void open_early_mods(std::filesystem::path const& filesDir) noexcept {
 void open_mods(std::filesystem::path const& filesDir) noexcept {
   current_load_phase = CLoadPhase::LoadPhase_Mods;
   // Construct mods (aka 'late' unity mods), should be happening after unity is inited (first scene loaded)
-  auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods);
+  LOG_INFO("Opening late mods using root: {}", filesDir.c_str());
+  auto mod_sos = listAllObjectsInPhase(filesDir, LoadPhase::Mods, skip_load);
   loaded_mods = loadMods(mod_sos, filesDir, skip_load, LoadPhase::Mods);
 
   LOG_INFO("Found late mods:");
