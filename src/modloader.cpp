@@ -4,6 +4,7 @@
 #include <optional>
 #include <variant>
 #include <vector>
+#include <fmt/ranges.h>
 #ifndef LINUX_TEST
 #include <jni.h>
 #include <sys/stat.h>
@@ -129,6 +130,13 @@ namespace modloader {
 bool copy_all(std::filesystem::path const& filesDir) noexcept {
   auto const& base_path = get_modloader_root_load_path();
   std::error_code error_code;
+
+  // Upfront, we walk all of the dirs and build a set of names --> paths.
+  // If we have multiple paths with the same filename, we will report that here.
+  // If that happens, we track all of the paths for that filename and report it.
+  // We will check this set when attempting to resolve dependencies or otherwise load.
+  static std::unordered_map<std::string, std::vector<std::string>> filenameSet{};
+
   for (auto const& [phase, path] : loadPhaseMap.arr) {
     auto dst = filesDir / path;
     auto src = base_path / path;
@@ -151,6 +159,44 @@ bool copy_all(std::filesystem::path const& filesDir) noexcept {
       LOG_ERROR("Failed during phase: {} to set permissions on copied directory: {}: {}", phase, dst.c_str(),
                 error_code.message().c_str());
       return false;
+    }
+    // Iterate over all files in src to ensure filenameSet is filled.
+    for (auto const& file : std::filesystem::recursive_directory_iterator(src, error_code)) {
+      if (error_code) {
+        LOG_ERROR("Failed to iterate over directory: {}: {}", src.c_str(), error_code.message().c_str());
+        return false;
+      }
+      if (file.is_directory()) {
+        continue;
+      }
+      if (file.path().extension() != ".so") {
+        continue;
+      }
+      if (!file.path().filename().string().starts_with("lib")) {
+        continue;
+      }
+      auto [itr, inserted] = filenameSet.insert({ file.path().filename().string(), { file.path().c_str() } });
+      if (!inserted) {
+        // For duplicate filenames, add to the set of paths for logging.
+        itr->second.push_back(file.path().c_str());
+      }
+    }
+  }
+  // After all entries have been determined in the set, log and delete from dst and duplicates.
+  for (auto const& [filename, paths] : filenameSet) {
+    if (paths.size() > 1) {
+      LOG_WARN("Duplicate library filename: {} with duplicates: {}", filename.c_str(), fmt::join(paths, ", "));
+      for (auto const& path : paths) {
+        // Get the relative path from src so that we can now point to dst's version of this file, and remove it.
+        auto dst_path = filesDir / std::filesystem::relative(path, base_path);
+        LOG_WARN("Removing duplicate library: {}", dst_path.c_str());
+        if (!remove_dir(dst_path)) {
+          LOG_ERROR("Failed to remove duplicate library: {}", dst_path.c_str());
+          // If, for some reason, we fail to remove duplicate libs, halt the loading process eagerly.
+          // TODO: This is probably too aggressive and we should revise this later.
+          return false;
+        }
+      }
     }
   }
   return true;
