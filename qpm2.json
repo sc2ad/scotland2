@@ -1,0 +1,42 @@
+{
+  "configVersion": "2.0.0",
+  "id": "scotland2",
+  "version": "0.1.7",
+  "additionalData": {
+    "url": "https://github.com/sc2ad/scotland2"
+  },
+  "workspace": {
+    "scripts": {
+      "build": [
+        "pwsh ./build.ps1",
+        "cmake -E make_directory extern/build/build",
+        "cmake -E copy build/libsl2.so extern/build/build/libsl2.so"
+      ],
+      "copy": [
+        "pwsh ./copy.ps1"
+      ]
+    },
+    "outBinaries": [
+      "build/libsl2.so"
+    ],
+    "ndk": "^29.0.0",
+    "toolchainOut": null,
+    "cmake": false
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "fmt": {
+      "versionRange": "^12.2.1",
+      "qmod": "none"
+    },
+    "capstone": {
+      "versionRange": "^5.0.9",
+      "qmod": "none"
+    }
+  },
+  "dependenciesDirectory": "extern",
+  "sharedDirectory": "shared",
+  "compileOptions": {
+    "includePaths": [""]
+  }
+}

@@ -1,0 +1,3 @@
+[submodule "third_party/flamingo"]
+	path = third_party/flamingo
+	url = https://github.com/QuestPackageManager/Flamingo.git
