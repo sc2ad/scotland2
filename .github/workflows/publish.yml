@@ -19,10 +19,16 @@ jobs:
         with:
           publish: late
           publish_token: ${{ secrets.QPM_TOKEN }}
+          upload_binaries: false
       - name: Build package
         run: qpm2 qpkg
-      - name: Upload debug release artifact
-        uses: softprops/action-gh-release@v0.1.15
+      - name: Verify packaged library
+        run: |
+          python3 -c "from pathlib import Path; from zipfile import ZipFile; assert ZipFile('scotland2.qpkg').read('bin/libsl2.so') == Path('build/libsl2.so').read_bytes()"
+      - name: Upload release libraries
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          files: build/debug_libsl2.so
+          files: |
+            build/libsl2.so
+            build/debug_libsl2.so
+          fail_on_unmatched_files: true
