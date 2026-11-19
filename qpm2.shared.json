@@ -22,7 +22,9 @@
         ]
       },
       "ndk": "^29.0.0",
-      "outBinary": "build/libsl2.so",
+      "outBinaries": [
+        "build/libsl2.so"
+      ],
       "cmake": false
     },
     "dependencies": {},
@@ -45,18 +47,18 @@
     }
   },
   "restoredDependencies": {
-    "capstone": {
-      "restoredVersion": "5.0.9",
-      "qpkgChecksum": "d5f0bc088755b2b9e5cea50eedc6a2ea0561f3ec6e845efb981291eb1458db2b",
-      "restoredBinaries": [
-        "libcapstone.a"
-      ],
-      "restoredEnv": {}
-    },
     "fmt": {
       "restoredVersion": "12.2.1",
       "qpkgChecksum": "918012cba1ed2c388ffab91a7bf66e101d0afea8581f0aad9d971097f4217e7d",
       "restoredBinaries": [],
+      "restoredEnv": {}
+    },
+    "capstone": {
+      "restoredVersion": "5.0.9",
+      "qpkgChecksum": "f28c2210107ade447dfd8f4e357503108de41ab1c7fdae3c01e594355a267efb",
+      "restoredBinaries": [
+        "libcapstone.a"
+      ],
       "restoredEnv": {}
     }
   },

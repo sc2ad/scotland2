@@ -16,7 +16,9 @@
         "pwsh ./copy.ps1"
       ]
     },
-    "outBinary": "build/libsl2.so",
+    "outBinaries": [
+      "build/libsl2.so"
+    ],
     "ndk": "^29.0.0",
     "toolchainOut": null,
     "cmake": false
