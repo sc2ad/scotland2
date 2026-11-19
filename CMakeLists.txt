@@ -1,13 +1,15 @@
+cmake_minimum_required(VERSION 3.22)
+
 if (NOT DEFINED BUILD_FOR)
     set(BUILD_FOR QUEST)
 endif()
 
-if (${BUILD_FOR} STREQUAL LINUX)
-    set(CMAKE_ANDROID_NDK "h/")
-endif()
-
-# include some defines automatically made by qpm
-include(qpm_defines.cmake)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/qpm2.json" QPM_MANIFEST)
+string(JSON MOD_ID GET "${QPM_MANIFEST}" id)
+string(JSON MOD_VERSION GET "${QPM_MANIFEST}" version)
+set(COMPILE_ID sl2)
+set(EXTERN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/extern")
+set(SHARED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shared")
 
 if (${BUILD_FOR} STREQUAL LINUX)
     message("Building for Linux...")
@@ -15,9 +17,16 @@ if (${BUILD_FOR} STREQUAL LINUX)
     set(CMAKE_SYSTEM_NAME ${CMAKE_HOST_SYSTEM_NAME})
 
     add_compile_definitions(LINUX_TEST)
+else()
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/ndkpath.txt" NDK_PATH LIMIT_COUNT 1)
+    file(TO_CMAKE_PATH "${NDK_PATH}" NDK_PATH)
+    set(CMAKE_TOOLCHAIN_FILE "${NDK_PATH}/build/cmake/android.toolchain.cmake")
+    set(ANDROID_PLATFORM 24)
+    set(ANDROID_ABI arm64-v8a)
+    set(ANDROID_STL c++_static)
+    set(ANDROID_USE_LEGACY_TOOLCHAIN_FILE OFF)
 endif()
 
-cmake_minimum_required(VERSION 3.22)
 project(${COMPILE_ID})
 
 # c++ standard
@@ -37,7 +46,7 @@ add_compile_options(-fPIE -flto -fPIC -fno-rtti -fvisibility=hidden -Os -O2)
 add_compile_definitions(MOD_VERSION=\"${MOD_VERSION}\")
 add_compile_definitions(MOD_ID=\"${MOD_ID}\")
 # Ensure we don't create any references through flamingo
-add_compile_definitions(FLAMINGO_HEADER_ONLY)
+add_compile_definitions(FLAMINGO_HEADER_ONLY FMT_HEADER_ONLY)
 add_compile_options(-Wall -Wextra -Werror -Wpedantic -Wno-gnu-zero-variadic-macro-arguments)
 # add_link_options(-fuse-ld=lld)
 # compile definitions used
@@ -48,12 +57,15 @@ if (DEFINED TEST_BUILD)
     MESSAGE(STATUS "Compiling with test defines")
 endif()
 
-RECURSE_FILES(cpp_file_list ${SOURCE_DIR}/*.cpp)
+# Embed Flamingo from the pinned submodule instead of QPM1 extraFiles.
+set(FLAMINGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/flamingo")
+
+file(GLOB_RECURSE cpp_file_list ${SOURCE_DIR}/*.cpp)
 
 list(APPEND cpp_file_list
-    ${EXTERN_DIR}/includes/flamingo/src/fixups.cpp
-    ${EXTERN_DIR}/includes/flamingo/src/installer.cpp
-    ${EXTERN_DIR}/includes/flamingo/src/page-allocator.cpp
+    ${FLAMINGO_DIR}/src/fixups.cpp
+    ${FLAMINGO_DIR}/src/installer.cpp
+    ${FLAMINGO_DIR}/src/page-allocator.cpp
 )
 
 add_library(
@@ -69,25 +81,17 @@ target_include_directories(${COMPILE_ID} PRIVATE ${INCLUDE_DIR})
 # add shared dir as include dir
 target_include_directories(${COMPILE_ID} PUBLIC ${SHARED_DIR})
 
-include(extern.cmake)
-MESSAGE(STATUS "extern added!")
-
-# Specifically remove the libflamingo.so dependency, as we want to compile directly via extraFiles
-get_target_property(LINKED_LIBS ${COMPILE_ID} LINK_LIBRARIES)
-message("Libraries being linked: ${LINKED_LIBS}")
-list(REMOVE_ITEM LINKED_LIBS ${EXTERN_DIR}/libs/libflamingo.so)
-list(REMOVE_ITEM LINKED_LIBS ${EXTERN_DIR}/libs/libflamingo.debug.so)
-message("After removal: ${LINKED_LIBS}")
-set_property(TARGET ${COMPILE_ID} PROPERTY LINK_LIBRARIES ${LINKED_LIBS})
-# Add include specifically for flamingo shared folder
-target_include_directories(${COMPILE_ID} PRIVATE ${EXTERN_DIR}/includes/flamingo/shared)
-# Add include specifically for flamingo build (to capstone directly)
-target_include_directories(${COMPILE_ID} PRIVATE ${EXTERN_DIR}/includes/capstone/shared)
+target_include_directories(${COMPILE_ID} PRIVATE
+    ${FLAMINGO_DIR}/shared
+    ${EXTERN_DIR}/includes/fmt
+    ${EXTERN_DIR}/includes/capstone
+)
+target_link_libraries(${COMPILE_ID} PRIVATE "${EXTERN_DIR}/libs/libcapstone.a")
 
 
 if (${BUILD_FOR} STREQUAL LINUX)
     message("Building tests")
-    RECURSE_FILES(cpp_test_file_list ./test/*.cpp)
+    file(GLOB_RECURSE cpp_test_file_list ./test/*.cpp)
 
     set(testname BootstrapTest)
 

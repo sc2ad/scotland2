@@ -2,8 +2,8 @@
 #include <array>
 #include <optional>
 #include <tuple>
-#include "capstone/shared/capstone/capstone.h"
-#include "capstone/shared/platform.h"
+#include <capstone/capstone.h>
+#include <capstone/platform.h>
 #include "log.h"
 
 namespace cs {
