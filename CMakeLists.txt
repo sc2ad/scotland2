@@ -57,21 +57,19 @@ if (DEFINED TEST_BUILD)
     MESSAGE(STATUS "Compiling with test defines")
 endif()
 
-# Embed Flamingo from the pinned submodule instead of QPM1 extraFiles.
 set(FLAMINGO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/flamingo")
 
-file(GLOB_RECURSE cpp_file_list ${SOURCE_DIR}/*.cpp)
-
-list(APPEND cpp_file_list
+add_library(${COMPILE_ID} SHARED
+    src/capstone-utils.cpp
+    src/elf-utils.cpp
+    src/loader.cpp
+    src/main.cpp
+    src/modloader.cpp
+    src/runtime-restriction.cpp
+    # Any Flamingo submodule update should check these files for what can be safely exposed.
     ${FLAMINGO_DIR}/src/fixups.cpp
     ${FLAMINGO_DIR}/src/installer.cpp
     ${FLAMINGO_DIR}/src/page-allocator.cpp
-)
-
-add_library(
-    ${COMPILE_ID} 
-    SHARED
-    ${cpp_file_list}
 )
 
 # add src dir as include dir
