@@ -14,8 +14,8 @@
       "scripts": {
         "build": [
           "pwsh ./build.ps1",
-          "cmake -E make_directory extern/build/build",
-          "cmake -E copy build/libsl2.so extern/build/build/libsl2.so"
+          "cmake -E make_directory extern/build",
+          "cmake -E copy build/libsl2.so extern/build/libsl2.so"
         ],
         "copy": [
           "pwsh ./copy.ps1"
@@ -23,18 +23,18 @@
       },
       "ndk": "^29.0.0",
       "outBinaries": [
-        "build/libsl2.so"
+        "libsl2.so"
       ],
       "cmake": false
     },
     "dependencies": {},
     "devDependencies": {
-      "capstone": {
-        "versionRange": "^5.0.9",
-        "qmod": "none"
-      },
       "fmt": {
         "versionRange": "^12.2.1",
+        "qmod": "none"
+      },
+      "capstone": {
+        "versionRange": "^5.0.9",
         "qmod": "none"
       }
     },
