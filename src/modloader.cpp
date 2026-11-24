@@ -15,6 +15,8 @@
 #include "log.h"
 #include "modloader.h"
 
+extern "C" {
+
 MODLOADER_EXPORT JavaVM* modloader_jvm;
 MODLOADER_EXPORT void* modloader_libil2cpp_handle;
 MODLOADER_EXPORT void* modloader_unity_handle;
@@ -24,6 +26,7 @@ MODLOADER_EXPORT bool libs_opened;
 MODLOADER_EXPORT bool early_mods_opened;
 MODLOADER_EXPORT bool late_mods_opened;
 MODLOADER_EXPORT CLoadPhase current_load_phase = CLoadPhase::LoadPhase_None;
+}
 
 namespace {
 
@@ -207,7 +210,7 @@ void open_mods(std::filesystem::path const& filesDir) noexcept {
       LOG_INFO("{}", loaded_mod->object.path.c_str());
     }
   }
-  
+
   // Call initialize and report errors
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
@@ -272,7 +275,8 @@ void load_mods() noexcept {
 
   for (auto& m : loaded_mods) {
     if (auto* loaded_mod = std::get_if<LoadedMod>(&m)) {
-      LOG_DEBUG("Attempting to call late_load on mod: {} {}", loaded_mod->object.path.c_str(), fmt::ptr(loaded_mod->late_loadFn.value_or(nullptr)));
+      LOG_DEBUG("Attempting to call late_load on mod: {} {}", loaded_mod->object.path.c_str(),
+                fmt::ptr(loaded_mod->late_loadFn.value_or(nullptr)));
       if (!loaded_mod->late_load()) {
         // Load call does not exist, but the mod was still loaded
         LOG_INFO("No late_load function on mod: {}", loaded_mod->object.path.c_str());
