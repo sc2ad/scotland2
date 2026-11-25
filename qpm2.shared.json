@@ -1,0 +1,66 @@
+{
+  "$schema": "https://raw.githubusercontent.com/QuestPackageManager/QPM.Package/refs/heads/main/qpm.shared.schema.json",
+  "config": {
+    "configVersion": "2.0.0",
+    "id": "scotland2",
+    "version": "0.1.7",
+    "additionalData": {
+      "description": "",
+      "author": "",
+      "license": "",
+      "url": "https://github.com/sc2ad/scotland2"
+    },
+    "workspace": {
+      "scripts": {
+        "build": [
+          "pwsh ./build.ps1",
+          "cmake -E make_directory extern/build",
+          "cmake -E copy build/libsl2.so extern/build/libsl2.so"
+        ],
+        "copy": [
+          "pwsh ./copy.ps1"
+        ]
+      },
+      "ndk": "^29.0.0",
+      "outBinaries": [
+        "libsl2.so"
+      ],
+      "cmake": false
+    },
+    "dependencies": {},
+    "devDependencies": {
+      "fmt": {
+        "versionRange": "^12.2.1",
+        "qmod": "none"
+      },
+      "capstone": {
+        "versionRange": "^5.0.9",
+        "qmod": "none"
+      }
+    },
+    "dependenciesDirectory": "extern",
+    "sharedDirectory": "shared",
+    "compileOptions": {
+      "includePaths": [
+        ""
+      ]
+    }
+  },
+  "restoredDependencies": {
+    "capstone": {
+      "restoredVersion": "5.0.9",
+      "qpkgChecksum": "8d22948cd286bd225d78fbf3affb374b1105cf9431767855f2066ce358888a55",
+      "restoredBinaries": [
+        "libcapstone.a"
+      ],
+      "restoredEnv": {}
+    },
+    "fmt": {
+      "restoredVersion": "12.2.1",
+      "qpkgChecksum": "918012cba1ed2c388ffab91a7bf66e101d0afea8581f0aad9d971097f4217e7d",
+      "restoredBinaries": [],
+      "restoredEnv": {}
+    }
+  },
+  "env": {}
+}
